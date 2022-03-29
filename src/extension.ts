@@ -10,9 +10,9 @@ interface Dictionary<T> {
 }
 
 class FuncInfo {
-	funcName: string = '';
-	fileName: string = '';
-	desc: string = '';
+	funcName: string;
+	fileName: string;
+	desc: string;
 	pos: number;
 	callee: Array<Callee>;
 
@@ -20,7 +20,9 @@ class FuncInfo {
 		this.funcName = funcName ?? '';
 		this.fileName = fileName ?? '';
 		this.pos = pos ?? -1;
-		this.callee = <Callee[]>[];
+
+		this.desc = '';
+		this.callee = new Array<Callee>();
 	}
 
 	public static convertToFuncInfo(line: string): FuncInfo {
@@ -66,10 +68,6 @@ export class CCallHierarchyProvider implements vscode.TreeDataProvider<TreeViewI
 
 	private treeDepth: number = 0;
 
-	// constructor(private workspaceRoot?: string) {
-	// 	cCallHierarchyViewProvider = this;
-	// }
-
 	refresh(treeDepth: number): void {
 		this._onDidChangeTreeData.fire();
 		this.treeDepth = treeDepth;
@@ -80,11 +78,6 @@ export class CCallHierarchyProvider implements vscode.TreeDataProvider<TreeViewI
 	}
 
 	getChildren(element?: TreeViewItem): Thenable<TreeViewItem[]> {
-		//if (!this.workspaceRoot) {
-		//	vscode.window.showInformationMessage('No dependency in empty workspace');
-		//	return Promise.resolve([]);
-		//}
-
 		if (element) {
 			return Promise.resolve(this.getFuncInfo(element.funcInfo));
 		}
@@ -141,26 +134,14 @@ export function showTree(offset: string, funcInfo: FuncInfo) {
 
 export async function buildDatabase() {
 	vscode.window.showInformationMessage('Building Database...');
-	//	let dir = getRoot();
-	//await doCLI(`find . -name *.c -o -name *.h > cscope.files`);
-	//await doCLI(`cscope.exe -b -R -i cscope.files`);
+	
 	await doCLI(`cscope.exe -Rcb`);
-	//await doCLI(`mv cscope.out cscope.out`);
-
-	/*
-	let dir = getRoot();
-	await doCLI(`find ${dir} -name *.c -o -name *.h > ${dir}/cscope.files`);
-	await doCLI(`cscope.exe -b -R -i ${dir}/cscope.files`);
-	await doCLI(`mv cscope.out ${dir}/cscope.out`);
-
-	return ('build done');
-	*/
+	
 	vscode.window.showInformationMessage('Finished building database');
 }
 
 export async function findCaller() {
 	functionsDictionary = {};
-	// treeRoot = new FuncInfo();
 	treeRoot = [];
 
 	let word = await getWord();
@@ -172,12 +153,6 @@ export async function findCaller() {
 	let treeDepth = getTreeDepth(treeRoot[0]);
 
 	cCallHierarchyViewProvider.refresh(treeDepth);
-
-	//await buildGraph(base.funcName, rootGraph).then(() => {
-	//	rootGraph.forEach(element => {
-	//		showTree('+', element);
-	//	});
-	//});
 
 	vscode.commands.executeCommand(`cHierarchyView.focus`);
 }
@@ -238,6 +213,7 @@ export async function buildGraph(funcName: string, root: Array<FuncInfo>) {
 
 	// Find caller functions
 	let data: string = await doCLI(`cscope.exe -d -f cscope.out -L3 ${funcName} `) as string;
+	
 	// If no caller it means it is root.
 	let lines = data.split('\n');
 	if (lines.length <= 1) {
@@ -290,27 +266,8 @@ export function getWord() {
 }
 
 export function getRoot(): string {
-	let rFolder: string = "";
-	// let folder: string = "";
-
-	// The code you place here will be executed every time your command is executed
-	if (vscode.workspace.workspaceFolders !== undefined) {
-		rFolder = vscode.workspace.workspaceFolders[0].uri.fsPath;
-		// folder = rFolder.toString();
-		// folder = folder.replace('file:', '');
-	}
-
-	// return folder;
-	return rFolder;
+	return vscode.workspace.workspaceFolders !== undefined ? vscode.workspace.workspaceFolders[0].uri.fsPath : '';
 }
-
-/*
-export function decodeCaller(line: string): Callee {
-	let lineSplit = line.split(' ', 4);
-	
-	return new Callee(dFunctions[tempCaller.funcName];, lineSplit[0], Number(lineSplit[2]));
-}
-*/
 
 /**
  * this method is called when your extension is activated
