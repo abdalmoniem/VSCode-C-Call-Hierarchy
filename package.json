@@ -1,9 +1,9 @@
 {
-    "name": "cCallHierarchy",
+    "name": "c-call-hierarchy",
     "publisher": "AbdAlMoniem AlHifnawy",
-    "displayName": "cCallHierarchy",
+    "displayName": "C-Call-Hierarchy",
     "description": "Build Call Hierarchy Based on cscope",
-    "version": "1.0.0",
+    "version": "1.1.6",
     "engines": {
         "vscode": "^1.52.0"
     },
@@ -22,6 +22,11 @@
     "main": "./out/extension.js",
     "contributes": {
         "commands": [
+            {
+                "command": "cCallHierarchy.clearSearch",
+                "title": "Clear Search",
+                "icon": "$(search-clear-results)"
+            },
             {
                 "command": "cCallHierarchy.build",
                 "title": "Build Database",
@@ -62,7 +67,20 @@
                 }
             ]
         },
+        "viewsWelcome": [
+            {
+                "view": "cHierarchyView",
+                "contents": "No searches initiated"
+            }
+        ],
         "menus": {
+            "view/title": [
+                {
+                    "command": "cCallHierarchy.clearSearch",
+                    "when": "view == cHierarchyView",
+                    "group": "navigation"
+                }
+            ],
             "view/item/context": [
                 {
                     "command": "cCallHierarchy.gotodef",

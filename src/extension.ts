@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
 import * as cp from 'child_process';
 
+let callGraph: Array<FuncInfo>;
 let functionsDictionary: Dictionary<FuncInfo>;
-let treeRoot: Array<FuncInfo>;
-let cCallHierarchyViewProvider: CCallHierarchyProvider;
+let callHierarchyViewProvider: CCallHierarchyProvider;
 
 interface Dictionary<T> {
 	[Key: string]: T;
@@ -63,14 +63,29 @@ export class TreeViewItem extends vscode.TreeItem {
 
 export class CCallHierarchyProvider implements vscode.TreeDataProvider<TreeViewItem> {
 
-	private _onDidChangeTreeData: vscode.EventEmitter<TreeViewItem | undefined | null | void> = new vscode.EventEmitter<TreeViewItem | undefined | null | void>();
-	readonly onDidChangeTreeData: vscode.Event<TreeViewItem | undefined | null | void> = this._onDidChangeTreeData.event;
+	private onDidChangeTreeDataEmitter: vscode.EventEmitter<TreeViewItem | undefined | null | void> = new vscode.EventEmitter<TreeViewItem | undefined | null | void>();
+	readonly onDidChangeTreeData: vscode.Event<TreeViewItem | undefined | null | void> = this.onDidChangeTreeDataEmitter.event;
 
-	private treeDepth: number = 0;
+	private state: vscode.TreeItemCollapsibleState = vscode.TreeItemCollapsibleState.Expanded;
 
-	refresh(treeDepth: number): void {
-		this._onDidChangeTreeData.fire();
-		this.treeDepth = treeDepth;
+	refresh(): void {
+		this.onDidChangeTreeDataEmitter.fire();
+	}
+
+	clearTree() {
+		callGraph = [];
+	
+		this.refresh();
+	}
+
+	collapseTree() {
+		this.state = vscode.TreeItemCollapsibleState.Collapsed;
+		this.refresh();
+	}
+	
+	expandTree() {
+		this.state = vscode.TreeItemCollapsibleState.Expanded;
+		this.refresh();
 	}
 
 	getTreeItem(element: TreeViewItem): vscode.TreeItem {
@@ -84,38 +99,31 @@ export class CCallHierarchyProvider implements vscode.TreeDataProvider<TreeViewI
 		return Promise.resolve(this.getFuncInfo());
 	}
 
-	/**
-	 * Given the path to package.json, read all its dependencies and devDependencies.
-	 */
 	private getFuncInfo(func?: FuncInfo): TreeViewItem[] {
 		let res: Array<TreeViewItem> = <TreeViewItem[]>[];
 
 		if (func === undefined) {
-			treeRoot.forEach (element => {
-				this.treeDepth -= this.treeDepth !== 0 ? 1 : 0;
-
+			callGraph.forEach (element => {
 				let item: TreeViewItem = new TreeViewItem(
 					element.funcName,
-					'',
+					element.pos.toString(),
 					element.fileName,
-					(this.treeDepth <= 0) ?
+					(element.callee?.length <= 0) ?
 						vscode.TreeItemCollapsibleState.None :
-						vscode.TreeItemCollapsibleState.Expanded,
+						this.state,
 						element);
 
 				res.push(item);
 			});
 		} else {
 			func.callee.forEach(element => {
-				this.treeDepth -= this.treeDepth !== 0 ? 1 : 0;
-
 				let item: TreeViewItem = new TreeViewItem(
 					element.funcInfo.funcName,
 					element.pos.toString(),
 					func.fileName,
-					(this.treeDepth <= 0) ?
+					(element.funcInfo.callee?.length <= 0) ?
 						vscode.TreeItemCollapsibleState.None :
-						vscode.TreeItemCollapsibleState.Expanded,
+						this.state,
 					element.funcInfo);
 
 				res.push(item);
@@ -125,11 +133,16 @@ export class CCallHierarchyProvider implements vscode.TreeDataProvider<TreeViewI
 	}
 }
 
-export function showTree(offset: string, funcInfo: FuncInfo) {
-	console.log(offset + ' ' + funcInfo.funcName);
-	funcInfo.callee.forEach(callee => {
-		showTree(offset + '+', callee.funcInfo);
-	});
+export async function clearSearchResults() {
+	callHierarchyViewProvider.clearTree();
+}
+
+export async function collapseSearchResults() {
+	callHierarchyViewProvider.collapseTree();
+}
+
+export async function expandSearchResults() {
+	callHierarchyViewProvider.expandTree();
 }
 
 export async function buildDatabase() {
@@ -142,28 +155,17 @@ export async function buildDatabase() {
 
 export async function findCaller() {
 	functionsDictionary = {};
-	treeRoot = [];
+	callGraph = [];
 
 	let word = await getWord();
-	let definition = await doCLI(`cscope.exe -d -f cscope.out -L1 ${word} `);
+	let definition = await doCLI(`cscope.exe -d -f cscope.out -L1 ${word}`);
 	let base = FuncInfo.convertToFuncInfo(definition as string);
 
-	await buildGraph(base.funcName, treeRoot);
+	await buildGraph(base.funcName, callGraph);
 
-	let treeDepth = getTreeDepth(treeRoot[0]);
-
-	cCallHierarchyViewProvider.refresh(treeDepth);
+	callHierarchyViewProvider.refresh();
 
 	vscode.commands.executeCommand(`cHierarchyView.focus`);
-}
-
-export function getTreeDepth(funcInfo: FuncInfo): number {
-
-	if ((funcInfo === undefined) || (funcInfo.callee === undefined) || (funcInfo.callee.length <= 0)) {
-		return 1;
-	}
-
-	return 1 + getTreeDepth(funcInfo.callee[0].funcInfo);
 }
 
 export function gotoDef(node: TreeViewItem) {
@@ -207,12 +209,12 @@ export function gotoLine(node: TreeViewItem) {
 }
 
 export async function buildGraph(funcName: string, root: Array<FuncInfo>) {
-	let definition = await doCLI(`cscope.exe -d -f cscope.out -L1 ${funcName} `);
+	let definition = await doCLI(`cscope.exe -d -f cscope.out -L1 ${funcName}`);
 	let base = FuncInfo.convertToFuncInfo(definition as string);
 	functionsDictionary[base.funcName] = base;
 
 	// Find caller functions
-	let data: string = await doCLI(`cscope.exe -d -f cscope.out -L3 ${funcName} `) as string;
+	let data: string = await doCLI(`cscope.exe -d -f cscope.out -L3 ${funcName}`) as string;
 	
 	// If no caller it means it is root.
 	let lines = data.split('\n');
@@ -253,10 +255,10 @@ export async function doCLI(command: string) {
 
 export function getWord() {
 	return new Promise((resolve, reject) => {
-		vscode.commands.executeCommand('editor.action.addSelectionToNextFindMatch').then(() => {
+		vscode.commands.executeCommand('editor.action.moveSelectionToNextFindMatch').then(() => {
 			const editor = vscode.window.activeTextEditor;
 			if (!editor) {
-				vscode.window.showInformationMessage('NO text editor selected');
+				vscode.window.showErrorMessage('No text editor selected!');
 				return;
 			}
 			const text = editor.document.getText(editor.selection);
@@ -274,17 +276,23 @@ export function getRoot(): string {
  * your extension is activated the very first time the command is executed
  */
 export function activate(context: vscode.ExtensionContext) {
+	callGraph = new Array<FuncInfo>();
+	callHierarchyViewProvider = new CCallHierarchyProvider();
 
+	let disposable = vscode.commands.registerCommand('cCallHierarchy.clearSearch', clearSearchResults);
+	context.subscriptions.push(disposable);
 
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
-	let disposable = vscode.commands.registerCommand('cCallHierarchy.build', buildDatabase);
+	// disposable = vscode.commands.registerCommand('cCallHierarchy.collapseSearch', collapseSearchResults);
+	// context.subscriptions.push(disposable);
+
+	// disposable = vscode.commands.registerCommand('cCallHierarchy.expandSearch', expandSearchResults);
+	// context.subscriptions.push(disposable);
+
+	disposable = vscode.commands.registerCommand('cCallHierarchy.build', buildDatabase);
 	context.subscriptions.push(disposable);
 
 	disposable = vscode.commands.registerCommand('cCallHierarchy.findcaller', findCaller);
 	context.subscriptions.push(disposable);
-
 
 	disposable = vscode.commands.registerCommand('cCallHierarchy.gotodef', gotoDef);
 	context.subscriptions.push(disposable);
@@ -292,10 +300,7 @@ export function activate(context: vscode.ExtensionContext) {
 	disposable = vscode.commands.registerCommand('cCallHierarchy.gotoline', gotoLine);
 	context.subscriptions.push(disposable);
 
-	treeRoot = new Array<FuncInfo>();
-
-	cCallHierarchyViewProvider = new CCallHierarchyProvider();
-	vscode.window.createTreeView('cHierarchyView', { treeDataProvider: cCallHierarchyViewProvider });
+	vscode.window.createTreeView('cHierarchyView', { treeDataProvider: callHierarchyViewProvider });
 }
 
 // this method is called when your extension is deactivated
