@@ -9,7 +9,7 @@
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/abdalmoniem/C-Call-Hieraarchy"
+        "url": "https://github.com/abdalmoniem/C-Call-Hieraarchy.git"
     },
     "categories": [
         "Programming Languages"
@@ -19,7 +19,7 @@
         "Call Graph",
         "Hierarchy"
     ],
-    "icon": "https://raw.githubusercontent.com/abdalmoniem/C-Call-Hieraarchy/master/icon.png",
+    "icon": "extension_icon.png",
     "activationEvents": [
         "onStartupFinished"
     ],

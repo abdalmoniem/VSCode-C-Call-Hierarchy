@@ -1,4 +1,4 @@
-# VSCode - CCallHierarchy README
+# VSCode - C Call Hierarchy README
 
 This extension creates C call graph (call hierarchy), using the cscope utility.
 
@@ -27,14 +27,14 @@ install cscope using cygwin or any other unix environment
 
 ## Release Notes
 
-### 1.0.0
+### 1.2.3
 
-Initial release.
+Added Collapse/Expand Buttons to TreeView
 
 
 -----------------------------------------------------------------------------------------------------------
 
-## Using with CCallHierarchy
+## Using with C Call Hierarchy
 
 * Build the cscope database using the build command. The build command can be accessed using the command palette (`Build Database`), or from the editor context (`mouse right click + Build Database`).
 * Open the call hierarchy by selecting a function, and issue the show command `Show Call Hierarchy` (from the command palette or from the editor context).
