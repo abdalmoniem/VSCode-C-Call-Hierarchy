@@ -3,9 +3,13 @@
     "publisher": "AbdAlMoniem AlHifnawy",
     "displayName": "C-Call-Hierarchy",
     "description": "Build Call Hierarchy Based on cscope",
-    "version": "1.1.6",
+    "version": "1.2.3",
     "engines": {
         "vscode": "^1.52.0"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/abdalmoniem/C-Call-Hieraarchy"
     },
     "categories": [
         "Programming Languages"
@@ -15,7 +19,7 @@
         "Call Graph",
         "Hierarchy"
     ],
-    "icon": "extension_icon.png",
+    "icon": "https://raw.githubusercontent.com/abdalmoniem/C-Call-Hieraarchy/master/icon.png",
     "activationEvents": [
         "onStartupFinished"
     ],
@@ -26,6 +30,16 @@
                 "command": "cCallHierarchy.clearSearch",
                 "title": "Clear Search",
                 "icon": "$(search-clear-results)"
+            },
+            {
+                "command": "cCallHierarchy.collapseSearch",
+                "title": "Collapse Search Results",
+                "icon": "$(search-collapse-results)"
+            },
+            {
+                "command": "cCallHierarchy.expandSearch",
+                "title": "Expand Search Results",
+                "icon": "$(search-expand-results)"
             },
             {
                 "command": "cCallHierarchy.build",
@@ -77,6 +91,16 @@
             "view/title": [
                 {
                     "command": "cCallHierarchy.clearSearch",
+                    "when": "view == cHierarchyView",
+                    "group": "navigation"
+                },
+                {
+                    "command": "cCallHierarchy.collapseSearch",
+                    "when": "view == cHierarchyView",
+                    "group": "navigation"
+                },
+                {
+                    "command": "cCallHierarchy.expandSearch",
                     "when": "view == cHierarchyView",
                     "group": "navigation"
                 }

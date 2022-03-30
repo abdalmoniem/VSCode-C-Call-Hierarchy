@@ -72,19 +72,21 @@ export class CCallHierarchyProvider implements vscode.TreeDataProvider<TreeViewI
 		this.onDidChangeTreeDataEmitter.fire();
 	}
 
-	clearTree() {
+	async clearTree(): Promise<void> {
 		callGraph = [];
-	
 		this.refresh();
 	}
 
-	collapseTree() {
-		this.state = vscode.TreeItemCollapsibleState.Collapsed;
+	async changeCollapsibleState(state: vscode.TreeItemCollapsibleState): Promise<void> {
+
+		this.state = state;
+
+		callGraph.forEach(node => node.funcName += ' ');
 		this.refresh();
-	}
-	
-	expandTree() {
-		this.state = vscode.TreeItemCollapsibleState.Expanded;
+
+		await this.delay(100);
+
+		callGraph.forEach(node => node.funcName = node.funcName.substring(0, node.funcName.length - 1));
 		this.refresh();
 	}
 
@@ -92,18 +94,19 @@ export class CCallHierarchyProvider implements vscode.TreeDataProvider<TreeViewI
 		return element;
 	}
 
-	getChildren(element?: TreeViewItem): Thenable<TreeViewItem[]> {
+	getChildren(element?: TreeViewItem): Array<TreeViewItem> {
 		if (element) {
-			return Promise.resolve(this.getFuncInfo(element.funcInfo));
+			return this.getFuncInfo(element.funcInfo);
 		}
-		return Promise.resolve(this.getFuncInfo());
+		return this.getFuncInfo();
 	}
 
-	private getFuncInfo(func?: FuncInfo): TreeViewItem[] {
-		let res: Array<TreeViewItem> = <TreeViewItem[]>[];
+	private getFuncInfo(func?: FuncInfo): Array<TreeViewItem> {
+		let res: Array<TreeViewItem> = new Array<TreeViewItem>();
 
+		// return root nodes if func is not defined
 		if (func === undefined) {
-			callGraph.forEach (element => {
+			callGraph.forEach(element => {
 				let item: TreeViewItem = new TreeViewItem(
 					element.funcName,
 					element.pos.toString(),
@@ -111,7 +114,7 @@ export class CCallHierarchyProvider implements vscode.TreeDataProvider<TreeViewI
 					(element.callee?.length <= 0) ?
 						vscode.TreeItemCollapsibleState.None :
 						this.state,
-						element);
+					element);
 
 				res.push(item);
 			});
@@ -129,27 +132,32 @@ export class CCallHierarchyProvider implements vscode.TreeDataProvider<TreeViewI
 				res.push(item);
 			});
 		}
+
 		return res;
+	}
+
+	delay(ms: number) {
+		return new Promise(resolve => setTimeout(resolve, ms));
 	}
 }
 
 export async function clearSearchResults() {
-	callHierarchyViewProvider.clearTree();
+	await callHierarchyViewProvider.clearTree();
 }
 
 export async function collapseSearchResults() {
-	callHierarchyViewProvider.collapseTree();
+	await callHierarchyViewProvider.changeCollapsibleState(vscode.TreeItemCollapsibleState.Collapsed);
 }
 
 export async function expandSearchResults() {
-	callHierarchyViewProvider.expandTree();
+	await callHierarchyViewProvider.changeCollapsibleState(vscode.TreeItemCollapsibleState.Expanded);
 }
 
 export async function buildDatabase() {
 	vscode.window.showInformationMessage('Building Database...');
-	
+
 	await doCLI(`cscope.exe -Rcb`);
-	
+
 	vscode.window.showInformationMessage('Finished building database');
 }
 
@@ -215,7 +223,7 @@ export async function buildGraph(funcName: string, root: Array<FuncInfo>) {
 
 	// Find caller functions
 	let data: string = await doCLI(`cscope.exe -d -f cscope.out -L3 ${funcName}`) as string;
-	
+
 	// If no caller it means it is root.
 	let lines = data.split('\n');
 	if (lines.length <= 1) {
@@ -225,7 +233,7 @@ export async function buildGraph(funcName: string, root: Array<FuncInfo>) {
 
 	for (let line of lines) {
 		let info: FuncInfo;
-		
+
 		if (line.length > 3) {
 			let tempCaller = FuncInfo.convertToFuncInfo(line);
 			let caller = functionsDictionary[tempCaller.funcName];
@@ -282,11 +290,11 @@ export function activate(context: vscode.ExtensionContext) {
 	let disposable = vscode.commands.registerCommand('cCallHierarchy.clearSearch', clearSearchResults);
 	context.subscriptions.push(disposable);
 
-	// disposable = vscode.commands.registerCommand('cCallHierarchy.collapseSearch', collapseSearchResults);
-	// context.subscriptions.push(disposable);
+	disposable = vscode.commands.registerCommand('cCallHierarchy.collapseSearch', collapseSearchResults);
+	context.subscriptions.push(disposable);
 
-	// disposable = vscode.commands.registerCommand('cCallHierarchy.expandSearch', expandSearchResults);
-	// context.subscriptions.push(disposable);
+	disposable = vscode.commands.registerCommand('cCallHierarchy.expandSearch', expandSearchResults);
+	context.subscriptions.push(disposable);
 
 	disposable = vscode.commands.registerCommand('cCallHierarchy.build', buildDatabase);
 	context.subscriptions.push(disposable);
@@ -300,7 +308,10 @@ export function activate(context: vscode.ExtensionContext) {
 	disposable = vscode.commands.registerCommand('cCallHierarchy.gotoline', gotoLine);
 	context.subscriptions.push(disposable);
 
-	vscode.window.createTreeView('cHierarchyView', { treeDataProvider: callHierarchyViewProvider });
+	vscode.window.createTreeView('cHierarchyView', {
+		treeDataProvider: callHierarchyViewProvider,
+		canSelectMany: false
+	});
 }
 
 // this method is called when your extension is deactivated
