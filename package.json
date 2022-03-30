@@ -1,6 +1,6 @@
 {
     "name": "c-call-hierarchy",
-    "publisher": "AbdAlMoniem AlHifnawy",
+    "publisher": "AbdAlMoniem-AlHifnawy",
     "displayName": "C-Call-Hierarchy",
     "description": "Build Call Hierarchy Based on cscope",
     "version": "1.2.3",
