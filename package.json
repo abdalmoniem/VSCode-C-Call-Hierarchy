@@ -3,7 +3,7 @@
     "publisher": "AbdAlMoniem-AlHifnawy",
     "displayName": "C Call Hierarchy",
     "description": "Build C Call Hierarchy using cscope",
-    "version": "1.6.4",
+    "version": "1.6.5",
     "engines": {
         "vscode": "^1.52.0"
     },
@@ -19,7 +19,7 @@
         "Call Graph",
         "Call Hierarchy"
     ],
-    "icon": "extension_icon.png",
+    "icon": "media/extension_icon.png",
     "activationEvents": [
         "onLanguage:c"
     ],
