@@ -3,7 +3,7 @@
     "publisher": "AbdAlMoniem-AlHifnawy",
     "displayName": "C Call Hierarchy",
     "description": "Build C Call Hierarchy using cscope",
-    "version": "1.5.0",
+    "version": "1.6.3",
     "engines": {
         "vscode": "^1.52.0"
     },
@@ -28,8 +28,42 @@
         "commands": [
             {
                 "command": "cCallHierarchy.build",
-                "title": "Build Database",
+                "title": "C Call Hierarchy: Build Database",
                 "icon": "$(extensions-view-icon)"
+            }
+        ],
+        "configuration": [
+            {
+                "title": "C Call Hierarchy",
+                "properties": {
+                    "ccallhierarchy.showFileNamesInSearchResults": {
+                        "order": 0,
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Show File Names in which the functions are called in Search Results"
+                    },
+                    "ccallhierarchy.clickJumpLocation": {
+                        "order": 1,
+                        "type": "string",
+                        "enum": [
+                            "Symbol Definition",
+                            "Symbol Call"
+                        ],
+                        "default": "Symbol Call",
+                        "markdownEnumDescriptions": [
+                            "Jump to the Definition of the selected Symbol",
+                            "Jump to where the selected Symbol is called"
+                        ],
+                        "description": "Search Result Click Jump Location"
+                        
+                    },
+                    "ccallhierarchy.showMessages": {
+                        "order": 2,
+                        "type": "boolean",
+                        "default": "true",
+                        "description": "Show Information and Error Messages before, during or, after searching."
+                    }
+                }
             }
         ]
     },
