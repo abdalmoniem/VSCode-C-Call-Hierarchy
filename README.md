@@ -25,7 +25,7 @@ brew install cscope
 ```
 
 ### Install on Windows
-install cscope using cygwin or any other unix like environment or download it from [here](https://github.com/abdalmoniem/C-Call-Hierarchy/releases/download/1.5.0/cscope.zip)
+install cscope using cygwin or any other unix like environment or download it from [here](https://github.com/abdalmoniem/C-Call-Hierarchy/releases/download/v1.5.0/cscope.zip)
 
 make sure to add the following to the `PATH` environment variable:
 1. "CSCOPE_DIR"/cscope
