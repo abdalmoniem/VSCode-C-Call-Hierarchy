@@ -1,28 +1,37 @@
+import * as fs from 'fs';
 import * as vscode from 'vscode';
-import * as cp from 'child_process';
+import * as process from 'child_process';
 
-let callGraph: Array<FuncInfo>;
-let functionsDictionary: Dictionary<FuncInfo>;
-let callHierarchyViewProvider: CCallHierarchyProvider;
+/**
+ * this method is called when your extension is activated
+ * your extension is activated the very first time the command is executed
+ */
+export function activate(context: vscode.ExtensionContext) {
+	context.subscriptions.push(vscode.commands.registerCommand('cCallHierarchy.build', buildDatabase));
 
-interface Dictionary<T> {
-	[Key: string]: T;
+	vscode.languages.registerCallHierarchyProvider(
+		{
+			scheme: 'file',
+			language: 'c'
+		},
+		new CCallHierarchyProvider());
 }
 
+// this method is called when your extension is deactivated
+export function deactivate() { }
+
 class FuncInfo {
-	funcName: string;
+	name: string;
 	fileName: string;
-	desc: string;
-	pos: number;
-	callee: Array<Callee>;
+	description: string;
+	position: number;
 
-	constructor(funcName?: string, fileName?: string, pos?: number) {
-		this.funcName = funcName ?? '';
+	constructor(name?: string, fileName?: string, position?: number) {
+		this.name = name ?? '';
 		this.fileName = fileName ?? '';
-		this.pos = pos ?? -1;
+		this.position = position ?? -1;
 
-		this.desc = '';
-		this.callee = new Array<Callee>();
+		this.description = '';
 	}
 
 	public static convertToFuncInfo(line: string): FuncInfo {
@@ -31,126 +40,153 @@ class FuncInfo {
 	}
 }
 
-class Callee {
-	funcInfo: FuncInfo;
-	pos: Number;
-	desc: String;
-
-	constructor(func: FuncInfo, pos: Number, desc: String) {
-		this.funcInfo = func;
-		this.pos = pos;
-		this.desc = desc;
-	}
-}
-
-export class TreeViewItem extends vscode.TreeItem {
+export class CallHierarchyItem extends vscode.CallHierarchyItem {
 	constructor(
-		public readonly label: string,
-		public line: string,
-		public path: string,
-		public readonly collapsibleState: vscode.TreeItemCollapsibleState,
-		public readonly funcInfo: FuncInfo,
-		public readonly iconPath = new vscode.ThemeIcon('symbol-function')
-	) {
-		super(label, collapsibleState);
-		this.tooltip = `${this.label} - ${this.line}`;
-		this.description = this.line;
-		this.path = path;
+		public kind: vscode.SymbolKind,
+		public name: string,
+		public detail: string,
+		public uri: vscode.Uri,
+		public range: vscode.Range,
+		public selectionRange: vscode.Range) {
+		super(kind, name, detail, uri, range, selectionRange);
 	}
-
-	contextValue = 'cHierarchyViewItem';
 }
 
-export class CCallHierarchyProvider implements vscode.TreeDataProvider<TreeViewItem> {
+export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
+	private readonly cwd: string;
 
-	private onDidChangeTreeDataEmitter: vscode.EventEmitter<TreeViewItem | undefined | null | void> = new vscode.EventEmitter<TreeViewItem | undefined | null | void>();
-	readonly onDidChangeTreeData: vscode.Event<TreeViewItem | undefined | null | void> = this.onDidChangeTreeDataEmitter.event;
-
-	private state: vscode.TreeItemCollapsibleState = vscode.TreeItemCollapsibleState.Expanded;
-
-	refresh(): void {
-		this.onDidChangeTreeDataEmitter.fire();
+	constructor() {
+		this.cwd = getWorkspaceRootPath();
 	}
 
-	async clearTree(): Promise<void> {
-		callGraph = [];
-		this.refresh();
-	}
+	async prepareCallHierarchy(
+		document: vscode.TextDocument,
+		position: vscode.Position,
+		token: vscode.CancellationToken): Promise<CallHierarchyItem | CallHierarchyItem[] | null | undefined> {
+		if (!token.isCancellationRequested) {
+			if (!fs.existsSync(`${this.cwd}/cscope.out`)) {
+				vscode.window.showInformationMessage(`Database doesn't exist, rebuilding...`);
+				await buildDatabase();
+			}
 
-	async changeCollapsibleState(state: vscode.TreeItemCollapsibleState): Promise<void> {
+			let wordRange = document.getWordRangeAtPosition(position);
 
-		this.state = state;
+			if (wordRange !== undefined) {
+				let funcName: string = document.getText(wordRange);
+				let definition = await doCLI(`cscope.exe -d -f cscope.out -L1 ${funcName}`);
 
-		callGraph.forEach(node => node.funcName += ' ');
-		this.refresh();
+				if (definition.length > 0) {
+					let funcInfo = FuncInfo.convertToFuncInfo(definition as string);
 
-		await this.delay(100);
+					let item = new CallHierarchyItem(
+						vscode.SymbolKind.Function,
+						funcName,
+						`@ ${funcInfo.position.toString()}`,
+						vscode.Uri.file(`${this.cwd}/${funcInfo.fileName}`),
+						new vscode.Range(new vscode.Position(funcInfo.position - 1, 0), new vscode.Position(funcInfo.position - 1, 0)),
+						new vscode.Range(new vscode.Position(funcInfo.position - 1, 0), new vscode.Position(funcInfo.position - 1, 0)));
 
-		callGraph.forEach(node => node.funcName = node.funcName.substring(0, node.funcName.length - 1));
-		this.refresh();
-	}
-
-	getTreeItem(element: TreeViewItem): vscode.TreeItem {
-		return element;
-	}
-
-	getChildren(element?: TreeViewItem): Array<TreeViewItem> {
-		if (element) {
-			return this.getFuncInfo(element.funcInfo);
+					return item;
+				}
+			}
 		}
-		return this.getFuncInfo();
 	}
 
-	private getFuncInfo(func?: FuncInfo): Array<TreeViewItem> {
-		let res: Array<TreeViewItem> = new Array<TreeViewItem>();
+	async provideCallHierarchyIncomingCalls(
+		item: CallHierarchyItem,
+		token: vscode.CancellationToken): Promise<vscode.CallHierarchyIncomingCall[] | null | undefined> {
+		if (!token.isCancellationRequested) {
+			let incomingCalls: Array<vscode.CallHierarchyIncomingCall> = new Array();
 
-		// return root nodes if func is not defined
-		if (func === undefined) {
-			callGraph.forEach(element => {
-				let item: TreeViewItem = new TreeViewItem(
-					element.funcName,
-					element.pos.toString(),
-					element.fileName,
-					(element.callee?.length <= 0) ?
-						vscode.TreeItemCollapsibleState.None :
-						this.state,
-					element);
+			let callers = await findCallers(item.name);
 
-				res.push(item);
-			});
-		} else {
-			func.callee.forEach(element => {
-				let item: TreeViewItem = new TreeViewItem(
-					element.funcInfo.funcName,
-					element.pos.toString(),
-					func.fileName,
-					(element.funcInfo.callee?.length <= 0) ?
-						vscode.TreeItemCollapsibleState.None :
-						this.state,
-					element.funcInfo);
+			for (let callerItem of callers) {
+				let ranges: Array<vscode.Range> = new Array();
 
-				res.push(item);
-			});
+				let callerItemPosition = new vscode.Position(callerItem.position - 1, 0);
+				let callerItemRange = new vscode.Range(callerItemPosition, callerItemPosition);
+
+				let fromCaller = new CallHierarchyItem(
+					vscode.SymbolKind.Function,
+					callerItem.name,
+					`@ ${callerItem.position.toString()}`,
+					vscode.Uri.file(`${this.cwd}/${callerItem.fileName}`),
+					callerItemRange,
+					callerItemRange);
+
+				ranges.push(callerItemRange);
+
+				incomingCalls.push(new vscode.CallHierarchyIncomingCall(fromCaller, ranges));
+			}
+
+			return incomingCalls;
 		}
-
-		return res;
 	}
 
-	delay(ms: number) {
-		return new Promise(resolve => setTimeout(resolve, ms));
+	async provideCallHierarchyOutgoingCalls(
+		item: CallHierarchyItem,
+		token: vscode.CancellationToken): Promise<vscode.CallHierarchyOutgoingCall[] | null | undefined> {
+		if (!token.isCancellationRequested) {
+			let outgoingCalls: Array<vscode.CallHierarchyOutgoingCall> = new Array();
+
+			let callees = await findCallees(item.name);
+
+			for (let calleeItem of callees) {
+				let ranges: Array<vscode.Range> = new Array();
+
+				let calleeItemPosition = new vscode.Position(calleeItem.position - 1, 0);
+				let calleeItemRange = new vscode.Range(calleeItemPosition, calleeItemPosition);
+
+				let toCallee = new CallHierarchyItem(
+					vscode.SymbolKind.Function,
+					calleeItem.name,
+					`@ ${calleeItem.position.toString()}`,
+					vscode.Uri.file(`${this.cwd}/${calleeItem.fileName}`),
+					calleeItemRange,
+					calleeItemRange);
+
+				ranges.push(calleeItemRange);
+
+				outgoingCalls.push(new vscode.CallHierarchyOutgoingCall(toCallee, ranges));
+			}
+
+			return outgoingCalls;
+		}
 	}
 }
 
-export async function clearSearchResults() {
-	await callHierarchyViewProvider.clearTree();
+export async function findCallers(funcName: string): Promise<Array<FuncInfo>> {
+	let callers: Array<FuncInfo> = new Array();
+
+	let data: string = await doCLI(`cscope.exe -d -f cscope.out -L3 ${funcName}`) as string;
+
+	let lines = data.split('\n');
+
+	for (let line of lines) {
+		if (line.length > 0) {
+			let funcInfo = FuncInfo.convertToFuncInfo(line);
+			callers.push(funcInfo);
+		}
+	}
+
+	return callers;
 }
 
-export async function collapseSearchResults() {
-	await callHierarchyViewProvider.changeCollapsibleState(vscode.TreeItemCollapsibleState.Collapsed);
-}
+export async function findCallees(funcName: string): Promise<Array<FuncInfo>> {
+	let callees: Array<FuncInfo> = new Array();
 
-export async function expandSearchResults() {
-	await callHierarchyViewProvider.changeCollapsibleState(vscode.TreeItemCollapsibleState.Expanded);
+	let data: string = await doCLI(`cscope.exe -d -f cscope.out -L2 ${funcName}`) as string;
+
+	let lines = data.split('\n');
+
+	for (let line of lines) {
+		if (line.length > 0) {
+			let funcInfo = FuncInfo.convertToFuncInfo(line);
+			callees.push(funcInfo);
+		}
+	}
+
+	return callees;
 }
 
 export async function buildDatabase() {
@@ -161,158 +197,24 @@ export async function buildDatabase() {
 	vscode.window.showInformationMessage('Finished building database');
 }
 
-export async function findCaller() {
-	functionsDictionary = {};
-	callGraph = [];
+export async function doCLI(command: string): Promise<string> {
+	let dir = getWorkspaceRootPath();
 
-	let word = await getWord();
-	let definition = await doCLI(`cscope.exe -d -f cscope.out -L1 ${word}`);
-	let base = FuncInfo.convertToFuncInfo(definition as string);
-
-	await buildGraph(base.funcName, callGraph);
-
-	callHierarchyViewProvider.refresh();
-
-	vscode.commands.executeCommand(`cHierarchyView.focus`);
-}
-
-export function gotoDef(node: TreeViewItem) {
-	let dir = getRoot();
-	const uriref: vscode.Uri = vscode.Uri.file(dir + '/' + node.funcInfo.fileName);
-	vscode.workspace.openTextDocument(uriref).then(doc => {
-		vscode.window.showTextDocument(doc).then(() => {
-			const line: number = node.funcInfo.pos;
-			if (vscode.window.activeTextEditor === undefined) {
-				return;
-			}
-			let reviewType: vscode.TextEditorRevealType = vscode.TextEditorRevealType.InCenter;
-			if (line === vscode.window.activeTextEditor.selection.active.line) {
-				reviewType = vscode.TextEditorRevealType.InCenterIfOutsideViewport;
-			}
-			const newSe = new vscode.Selection(line, 0, line, 0);
-			vscode.window.activeTextEditor.selection = newSe;
-			vscode.window.activeTextEditor.revealRange(newSe, reviewType);
-		});
+	return new Promise((resolve, _) => {
+		process.exec(
+			command,
+			{ cwd: dir },
+			(error: process.ExecException | null, stdout: string, stderr: string) => {
+				if (error) {
+					vscode.window.showErrorMessage(`exec error: ${error}`);
+				} else {
+					vscode.window.showErrorMessage(stderr);
+					resolve(stdout);
+				}
+			});
 	});
 }
 
-export function gotoLine(node: TreeViewItem) {
-	let dir = getRoot();
-	const uriref: vscode.Uri = vscode.Uri.file(dir + '/' + node.path);
-	vscode.workspace.openTextDocument(uriref).then(doc => {
-		vscode.window.showTextDocument(doc).then(() => {
-			const line: number = parseInt(node.line);
-			if (vscode.window.activeTextEditor === undefined) {
-				return;
-			}
-			let reviewType: vscode.TextEditorRevealType = vscode.TextEditorRevealType.InCenter;
-			if (line === vscode.window.activeTextEditor.selection.active.line) {
-				reviewType = vscode.TextEditorRevealType.InCenterIfOutsideViewport;
-			}
-			const newSe = new vscode.Selection(line - 1, 0, line - 1, 0);
-			vscode.window.activeTextEditor.selection = newSe;
-			vscode.window.activeTextEditor.revealRange(newSe, reviewType);
-		});
-	});
-}
-
-export async function buildGraph(funcName: string, root: Array<FuncInfo>) {
-	let definition = await doCLI(`cscope.exe -d -f cscope.out -L1 ${funcName}`);
-	let base = FuncInfo.convertToFuncInfo(definition as string);
-	functionsDictionary[base.funcName] = base;
-
-	// Find caller functions
-	let data: string = await doCLI(`cscope.exe -d -f cscope.out -L3 ${funcName}`) as string;
-
-	// If no caller it means it is root.
-	let lines = data.split('\n');
-	if (lines.length <= 1) {
-		root.push(base);
-		return;
-	}
-
-	for (let line of lines) {
-		let info: FuncInfo;
-
-		if (line.length > 3) {
-			let tempCaller = FuncInfo.convertToFuncInfo(line);
-			let caller = functionsDictionary[tempCaller.funcName];
-			if (caller === undefined) {
-				await buildGraph(tempCaller.funcName, root);
-				caller = functionsDictionary[tempCaller.funcName];
-			}
-			let callee = new Callee(functionsDictionary[base.funcName], tempCaller.pos, tempCaller.desc);
-			caller.callee.push(callee);
-		}
-	}
-}
-
-export async function doCLI(command: string) {
-
-	let dir = getRoot();
-	return new Promise((resolve, reject) => {
-		cp.exec(command, { cwd: dir }, (error: cp.ExecException | null, stdout: string) => {
-			if (error) {
-				console.error(`exec error: ${error}`);
-				return;
-			}
-			resolve(stdout);
-		});
-	});
-}
-
-export function getWord() {
-	return new Promise((resolve, reject) => {
-		vscode.commands.executeCommand('editor.action.moveSelectionToNextFindMatch').then(() => {
-			const editor = vscode.window.activeTextEditor;
-			if (!editor) {
-				vscode.window.showErrorMessage('No text editor selected!');
-				return;
-			}
-			const text = editor.document.getText(editor.selection);
-			resolve(text);
-		});
-	});
-}
-
-export function getRoot(): string {
+export function getWorkspaceRootPath(): string {
 	return vscode.workspace.workspaceFolders !== undefined ? vscode.workspace.workspaceFolders[0].uri.fsPath : '';
 }
-
-/**
- * this method is called when your extension is activated
- * your extension is activated the very first time the command is executed
- */
-export function activate(context: vscode.ExtensionContext) {
-	callGraph = new Array<FuncInfo>();
-	callHierarchyViewProvider = new CCallHierarchyProvider();
-
-	let disposable = vscode.commands.registerCommand('cCallHierarchy.clearSearch', clearSearchResults);
-	context.subscriptions.push(disposable);
-
-	disposable = vscode.commands.registerCommand('cCallHierarchy.collapseSearch', collapseSearchResults);
-	context.subscriptions.push(disposable);
-
-	disposable = vscode.commands.registerCommand('cCallHierarchy.expandSearch', expandSearchResults);
-	context.subscriptions.push(disposable);
-
-	disposable = vscode.commands.registerCommand('cCallHierarchy.build', buildDatabase);
-	context.subscriptions.push(disposable);
-
-	disposable = vscode.commands.registerCommand('cCallHierarchy.findcaller', findCaller);
-	context.subscriptions.push(disposable);
-
-	disposable = vscode.commands.registerCommand('cCallHierarchy.gotodef', gotoDef);
-	context.subscriptions.push(disposable);
-
-	disposable = vscode.commands.registerCommand('cCallHierarchy.gotoline', gotoLine);
-	context.subscriptions.push(disposable);
-
-	vscode.window.createTreeView('cHierarchyView', {
-		treeDataProvider: callHierarchyViewProvider,
-		canSelectMany: false
-	});
-}
-
-// this method is called when your extension is deactivated
-export function deactivate() { }

@@ -2,14 +2,14 @@
     "name": "c-call-hierarchy",
     "publisher": "AbdAlMoniem-AlHifnawy",
     "displayName": "C Call Hierarchy",
-    "description": "Build Call Hierarchy Based on cscope",
-    "version": "1.2.5",
+    "description": "Build C Call Hierarchy using cscope",
+    "version": "1.5.0",
     "engines": {
         "vscode": "^1.52.0"
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/abdalmoniem/C-Call-Hieraarchy.git"
+        "url": "https://github.com/abdalmoniem/C-Call-Hierarchy.git"
     },
     "categories": [
         "Programming Languages"
@@ -17,119 +17,21 @@
     "keywords": [
         "C",
         "Call Graph",
-        "Hierarchy"
+        "Call Hierarchy"
     ],
     "icon": "extension_icon.png",
     "activationEvents": [
-        "onStartupFinished"
+        "onLanguage:c"
     ],
     "main": "./out/extension.js",
     "contributes": {
         "commands": [
             {
-                "command": "cCallHierarchy.clearSearch",
-                "title": "Clear Search",
-                "icon": "$(search-clear-results)"
-            },
-            {
-                "command": "cCallHierarchy.collapseSearch",
-                "title": "Collapse Search Results",
-                "icon": "$(search-collapse-results)"
-            },
-            {
-                "command": "cCallHierarchy.expandSearch",
-                "title": "Expand Search Results",
-                "icon": "$(search-expand-results)"
-            },
-            {
                 "command": "cCallHierarchy.build",
                 "title": "Build Database",
                 "icon": "$(extensions-view-icon)"
-            },
-            {
-                "command": "cCallHierarchy.findcaller",
-                "title": "Show Call Hierarchy",
-                "icon": "$(symbol-reference)"
-            },
-            {
-                "command": "cCallHierarchy.gotodef",
-                "title": "Goto Def",
-                "icon": "$(notebook-open-as-text)"
-            },
-            {
-                "command": "cCallHierarchy.gotoline",
-                "title": "Goto Line",
-                "icon": "$(preferences-open-settings)"
             }
-        ],
-        "viewsContainers": {
-            "activitybar": [
-                {
-                    "id": "cCallHierarchy",
-                    "title": "C Call Hierarchy",
-                    "icon": "$(references)"
-                }
-            ]
-        },
-        "views": {
-            "cCallHierarchy": [
-                {
-                    "id": "cHierarchyView",
-                    "name": "C Call Hierarchy",
-                    "contextualTitle": "Tree Explorer",
-                    "type": "tree"
-                }
-            ]
-        },
-        "viewsWelcome": [
-            {
-                "view": "cHierarchyView",
-                "contents": "No searches initiated"
-            }
-        ],
-        "menus": {
-            "view/title": [
-                {
-                    "command": "cCallHierarchy.clearSearch",
-                    "when": "view == cHierarchyView",
-                    "group": "navigation"
-                },
-                {
-                    "command": "cCallHierarchy.collapseSearch",
-                    "when": "view == cHierarchyView",
-                    "group": "navigation"
-                },
-                {
-                    "command": "cCallHierarchy.expandSearch",
-                    "when": "view == cHierarchyView",
-                    "group": "navigation"
-                }
-            ],
-            "view/item/context": [
-                {
-                    "command": "cCallHierarchy.gotodef",
-                    "when": "view == cHierarchyView",
-                    "group": "inline"
-                },
-                {
-                    "command": "cCallHierarchy.gotoline",
-                    "when": "view == cHierarchyView",
-                    "group": "inline"
-                }
-            ],
-            "editor/context": [
-                {
-                    "command": "cCallHierarchy.build",
-                    "when": "editorTextFocus && resourceLangId == c",
-                    "group": "inline"
-                },
-                {
-                    "command": "cCallHierarchy.findcaller",
-                    "when": "editorTextFocus && resourceLangId == c",
-                    "group": "inline"
-                }
-            ]
-        }
+        ]
     },
     "scripts": {
         "vscode:prepublish": "npm run compile",
