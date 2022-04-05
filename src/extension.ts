@@ -1,16 +1,26 @@
+/**
+ * file: extension.js
+ * 
+ * date: 03-Apr-22
+ * 
+ * author: AbdAlMoniem AlHifnawy
+ * 
+ * description: main extension file that executes extension functionalities
+ */
+
 import * as fs from 'fs';
 import * as vscode from 'vscode';
 import * as process from 'child_process';
 
 enum ClickJumpLocation {
-	symbolDefinition = 'Symbol Definition',
-	symboldCall = 'Symbol Call'
+	SymbolDefinition = 'Symbol Definition',
+	SymboldCall = 'Symbol Call'
 }
 
 enum LogLevel {
-	info,
-	warn,
-	error
+	INFO,
+	WARN,
+	ERROR
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -22,9 +32,15 @@ export function activate(context: vscode.ExtensionContext) {
 			language: 'c'
 		},
 		new CCallHierarchyProvider());
+
+	vscode.languages.registerCallHierarchyProvider(
+		{
+			scheme: 'file',
+			language: 'cpp'
+		},
+		new CCallHierarchyProvider());
 }
 
-// this method is called when your extension is deactivated
 export function deactivate() { }
 
 class FuncInfo {
@@ -53,18 +69,6 @@ class FuncInfo {
 	}
 }
 
-export class CallHierarchyItem extends vscode.CallHierarchyItem {
-	constructor(
-		public kind: vscode.SymbolKind,
-		public name: string,
-		public detail: string,
-		public uri: vscode.Uri,
-		public range: vscode.Range,
-		public selectionRange: vscode.Range) {
-		super(kind, name, detail, uri, range, selectionRange);
-	}
-}
-
 export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
 	private readonly cwd: string;
 
@@ -75,10 +79,10 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
 	async prepareCallHierarchy(
 		document: vscode.TextDocument,
 		position: vscode.Position,
-		token: vscode.CancellationToken): Promise<CallHierarchyItem | CallHierarchyItem[] | null | undefined> {
+		token: vscode.CancellationToken): Promise<vscode.CallHierarchyItem | vscode.CallHierarchyItem[] | null | undefined> {
 		if (!token.isCancellationRequested) {
 			if (!fs.existsSync(`${this.cwd}/cscope.out`)) {
-				showMessage(`Database doesn't exist, rebuilding...`);
+				showMessageWindow(`Database doesn't exist, rebuilding...`);
 				await buildDatabase();
 			}
 
@@ -86,7 +90,7 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
 
 			if (wordRange !== undefined) {
 				let funcName: string = document.getText(wordRange);
-				let definition = await doCLI(`cscope.exe -d -f cscope.out -L1 ${funcName}`);
+				let definition = await doCLI(`cscope -d -f cscope.out -L1 ${funcName}`);
 
 				if (definition.length > 0) {
 					let funcInfo = FuncInfo.convertToFuncInfo(definition as string);
@@ -103,7 +107,7 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
 
 					let description = `${canShowFileNames ? fileName : ''} @ ${(position.line + 1).toString()}`;
 
-					if (clickJumpLocation === ClickJumpLocation.symbolDefinition) {
+					if (clickJumpLocation === ClickJumpLocation.SymbolDefinition) {
 						let functionPosition = new vscode.Position(funcInfo.position - 1, 0);
 						functionRange = new vscode.Range(functionPosition, functionPosition);
 
@@ -112,8 +116,8 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
 						description = `${canShowFileNames ? funcInfo.getFileName() : ''} @ ${funcInfo.position.toString()}`;
 					}
 
-					let item = new CallHierarchyItem(
-						vscode.SymbolKind.Function,
+					let item = new vscode.CallHierarchyItem(
+						await getSymbolKind(funcName),
 						funcName,
 						description,
 						fileLocation,
@@ -127,7 +131,7 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
 	}
 
 	async provideCallHierarchyIncomingCalls(
-		item: CallHierarchyItem,
+		item: vscode.CallHierarchyItem,
 		token: vscode.CancellationToken): Promise<vscode.CallHierarchyIncomingCall[] | null | undefined> {
 		if (!token.isCancellationRequested) {
 			let incomingCalls: Array<vscode.CallHierarchyIncomingCall> = new Array();
@@ -147,22 +151,24 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
 
 				let description = `${canShowFileNames ? callerItem.getFileName() : ''} @ ${callerItem.position.toString()}`;
 
-				if (clickJumpLocation === ClickJumpLocation.symbolDefinition) {
-					let definition = await doCLI(`cscope.exe -d -f cscope.out -L1 ${callerItem.name}`);
+				if (clickJumpLocation === ClickJumpLocation.SymbolDefinition) {
+					let definition = await doCLI(`cscope -d -f cscope.out -L1 ${callerItem.name}`);
 
-					let funcInfo = FuncInfo.convertToFuncInfo(definition as string);
+					if (definition.length > 0) {
+						let funcInfo = FuncInfo.convertToFuncInfo(definition as string);
 
-					callerItemPosition = new vscode.Position(funcInfo.position - 1, 0);
+						callerItemPosition = new vscode.Position(funcInfo.position - 1, 0);
 
-					fileLocation = vscode.Uri.file(`${this.cwd}/${funcInfo.fileName}`);
+						fileLocation = vscode.Uri.file(`${this.cwd}/${funcInfo.fileName}`);
 
-					description = `${canShowFileNames ? funcInfo.getFileName() : ''} @ ${funcInfo.position.toString()}`;
+						description = `${canShowFileNames ? funcInfo.getFileName() : ''} @ ${funcInfo.position.toString()}`;
+					}
 				}
 
 				let callerItemRange = new vscode.Range(callerItemPosition, callerItemPosition);
 
-				let fromCaller = new CallHierarchyItem(
-					vscode.SymbolKind.Function,
+				let fromCaller = new vscode.CallHierarchyItem(
+					await getSymbolKind(callerItem.name),
 					callerItem.name,
 					description,
 					fileLocation,
@@ -179,7 +185,7 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
 	}
 
 	async provideCallHierarchyOutgoingCalls(
-		item: CallHierarchyItem,
+		item: vscode.CallHierarchyItem,
 		token: vscode.CancellationToken): Promise<vscode.CallHierarchyOutgoingCall[] | null | undefined> {
 		if (!token.isCancellationRequested) {
 			let outgoingCalls: Array<vscode.CallHierarchyOutgoingCall> = new Array();
@@ -199,22 +205,24 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
 
 				let description = `${canShowFileNames ? calleeItem.getFileName() : ''} @ ${calleeItem.position.toString()}`;
 
-				if (clickJumpLocation === ClickJumpLocation.symbolDefinition) {
-					let definition = await doCLI(`cscope.exe -d -f cscope.out -L1 ${calleeItem.name}`);
+				if (clickJumpLocation === ClickJumpLocation.SymbolDefinition) {
+					let definition = await doCLI(`cscope -d -f cscope.out -L1 ${calleeItem.name}`);
 
-					let funcInfo = FuncInfo.convertToFuncInfo(definition as string);
+					if (definition.length > 0) {
+						let funcInfo = FuncInfo.convertToFuncInfo(definition as string);
 
-					calleeItemPosition = new vscode.Position(funcInfo.position - 1, 0);
+						calleeItemPosition = new vscode.Position(funcInfo.position - 1, 0);
 
-					fileLocation = vscode.Uri.file(`${this.cwd}/${funcInfo.fileName}`);
+						fileLocation = vscode.Uri.file(`${this.cwd}/${funcInfo.fileName}`);
 
-					description = `${canShowFileNames ? funcInfo.getFileName() : ''} @ ${funcInfo.position.toString()}`;
+						description = `${canShowFileNames ? funcInfo.getFileName() : ''} @ ${funcInfo.position.toString()}`;
+					}
 				}
 
 				let calleeItemRange = new vscode.Range(calleeItemPosition, calleeItemPosition);
 
-				let toCallee = new CallHierarchyItem(
-					vscode.SymbolKind.Function,
+				let toCallee = new vscode.CallHierarchyItem(
+					await getSymbolKind(calleeItem.name),
 					calleeItem.name,
 					description,
 					fileLocation,
@@ -232,17 +240,42 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
 }
 
 export async function buildDatabase() {
-	showMessage('Building Database...');
+	vscode.window.withProgress({
+		location: vscode.ProgressLocation.Notification,
+		// location: vscode.ProgressLocation.Window,
+		// title: "Database Build",
+		// cancellable: true
+	}, async (progress/* , token */) => {
+		// token.onCancellationRequested(() => {
+		// 	console.log("User canceled the long running operation");
+		// });
 
-	await doCLI(`cscope.exe -Rcb`);
+		progress.report({ increment: 0, message: "Building Database..." });
 
-	showMessage('Finished building database');
+		// showMessageWindow('Building Database...');
+
+		await doCLI(`cscope -Rcbf cscope.out`);
+
+		await delay(500);
+
+		progress.report({ increment: 50, message: "Building ctags database..." });
+
+		await doCLI(`ctags --fields=+i -Rno ctags.out`);
+
+		await delay(500);
+
+		progress.report({ increment: 100, message: "Finished building database" });
+
+		await delay(1500);
+
+		// showMessageWindow('Finished building database');
+	});
 }
 
 export async function findCallers(funcName: string): Promise<Array<FuncInfo>> {
 	let callers: Array<FuncInfo> = new Array();
 
-	let data: string = await doCLI(`cscope.exe -d -f cscope.out -L3 ${funcName}`) as string;
+	let data: string = await doCLI(`cscope -d -f cscope.out -L3 ${funcName}`) as string;
 
 	let lines = data.split('\n');
 
@@ -259,7 +292,7 @@ export async function findCallers(funcName: string): Promise<Array<FuncInfo>> {
 export async function findCallees(funcName: string): Promise<Array<FuncInfo>> {
 	let callees: Array<FuncInfo> = new Array();
 
-	let data: string = await doCLI(`cscope.exe -d -f cscope.out -L2 ${funcName}`) as string;
+	let data: string = await doCLI(`cscope -d -f cscope.out -L2 ${funcName}`) as string;
 
 	let lines = data.split('\n');
 
@@ -273,6 +306,76 @@ export async function findCallees(funcName: string): Promise<Array<FuncInfo>> {
 	return callees;
 }
 
+export async function getSymbolKind(symbolName: string): Promise<vscode.SymbolKind> {
+	let data = await doCLI(`readtags -t ctags.out -F "(list $name \\" \\" $input \\" \\" $line \\" \\" $kind #t)" ${symbolName}`);
+
+	let lines = data.split(/\n/);
+
+	let kind: vscode.SymbolKind = vscode.SymbolKind.Constant;
+
+	for (let line of lines) {
+		let fields = line.split(/\s+/);
+
+		if (fields.length >= 4) {
+			switch (fields[3]) {
+				case 'd':
+					kind = vscode.SymbolKind.Constant;
+					break;
+				case 'e':
+					kind = vscode.SymbolKind.Enum;
+					break;
+				case 'f':
+					kind = vscode.SymbolKind.Function;
+					break;
+				case 'g':
+					kind = vscode.SymbolKind.EnumMember;
+					break;
+				case 'h':
+					kind = vscode.SymbolKind.File;
+					break;
+				case 'l':
+					kind = vscode.SymbolKind.Variable;
+					break;
+				case 'm':
+					kind = vscode.SymbolKind.Field;
+					break;
+				case 'p':
+					kind = vscode.SymbolKind.Function;
+					break;
+				case 's':
+					kind = vscode.SymbolKind.Struct;
+					break;
+				case 't':
+					kind = vscode.SymbolKind.Class;
+					break;
+				case 'u':
+					kind = vscode.SymbolKind.Struct;
+					break;
+				case 'v':
+					kind = vscode.SymbolKind.Variable;
+					break;
+				case 'x':
+					kind = vscode.SymbolKind.Variable;
+					break;
+				case 'z':
+					kind = vscode.SymbolKind.TypeParameter;
+					break;
+				case 'L':
+					kind = vscode.SymbolKind.Namespace;
+					break;
+				case 'D':
+					kind = vscode.SymbolKind.TypeParameter;
+					break;
+				default:
+					kind = vscode.SymbolKind.Class;
+					break;
+			}
+		}
+	}
+
+	return kind;
+}
+
 export async function doCLI(command: string): Promise<string> {
 	let dir = getWorkspaceRootPath();
 
@@ -282,8 +385,8 @@ export async function doCLI(command: string): Promise<string> {
 			{ cwd: dir },
 			(error: process.ExecException | null, stdout: string, stderr: string) => {
 				if (error) {
-					showMessage(`exec error: ${error}`, LogLevel.error);
-					showMessage(stderr, LogLevel.error);
+					showMessageWindow(`exec error: ${error}`, LogLevel.ERROR);
+					showMessageWindow(stderr, LogLevel.ERROR);
 					reject(stderr);
 				} else {
 					resolve(stdout);
@@ -296,23 +399,27 @@ export function getWorkspaceRootPath(): string {
 	return vscode.workspace.workspaceFolders !== undefined ? vscode.workspace.workspaceFolders[0].uri.fsPath : '';
 }
 
-export function showMessage(msg: string, logLevl: LogLevel = LogLevel.info) {
+export function showMessageWindow(msg: string, logLevl: LogLevel = LogLevel.INFO) {
 	let config = vscode.workspace.getConfiguration('ccallhierarchy');
 	let canShowMessages = config.get('showMessages');
 
 	if (canShowMessages) {
 		switch (logLevl) {
-			case LogLevel.info:
+			case LogLevel.INFO:
 				vscode.window.showInformationMessage(msg);
 				break;
-			case LogLevel.warn:
+			case LogLevel.WARN:
 				vscode.window.showWarningMessage(msg);
 				break;
-			case LogLevel.error:
+			case LogLevel.ERROR:
 				vscode.window.showErrorMessage(msg);
 				break;
 			default:
 				break;
 		}
 	}
+}
+
+export async function delay(ms: number) {
+	return new Promise( resolve => setTimeout(resolve, ms) );
 }
