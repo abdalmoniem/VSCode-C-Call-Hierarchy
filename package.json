@@ -9,7 +9,11 @@
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/abdalmoniem/C-Call-Hierarchy.git"
+        "url": "https://github.com/abdalmoniem/C-Call-Hierarchy"
+    },
+    "bugs": {
+        "email": "hifnawy_moniem@hotmail.com",
+        "url": "https://github.com/abdalmoniem/C-Call-Hierarchy/issues"
     },
     "categories": [
         "Programming Languages"
