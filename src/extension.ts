@@ -23,8 +23,14 @@ enum LogLevel {
 	ERROR
 }
 
+enum DatabaseBuild {
+	CSCOPE = 1,
+	CTAGS = 2,
+	BOTH = 3
+}
+
 export function activate(context: vscode.ExtensionContext) {
-	context.subscriptions.push(vscode.commands.registerCommand('cCallHierarchy.build', buildDatabase));
+	context.subscriptions.push(vscode.commands.registerCommand('cCallHierarchy.build', () => buildDatabase(DatabaseBuild.BOTH)));
 
 	vscode.languages.registerCallHierarchyProvider(
 		{
@@ -81,9 +87,20 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
 		position: vscode.Position,
 		token: vscode.CancellationToken): Promise<vscode.CallHierarchyItem | vscode.CallHierarchyItem[] | null | undefined> {
 		if (!token.isCancellationRequested) {
+			let buildOption = 0;
+			
 			if (!fs.existsSync(`${this.cwd}/cscope.out`)) {
-				showMessageWindow(`Database doesn't exist, rebuilding...`);
-				await buildDatabase();
+				showMessageWindow(`cscope database doesn't exist, rebuilding...`);
+				buildOption |= 1 << 0;
+			}
+
+			if (!fs.existsSync(`${this.cwd}/ctags.out`)) {
+				showMessageWindow(`ctags database doesn't exist, rebuilding...`);
+				buildOption |= 1 << 1;
+			}
+			
+			if (buildOption > 0) {
+				await buildDatabase(buildOption as DatabaseBuild);
 			}
 
 			let wordRange = document.getWordRangeAtPosition(position);
@@ -239,8 +256,8 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
 	}
 }
 
-export async function buildDatabase() {
-	vscode.window.withProgress({
+export async function buildDatabase(buildOption: DatabaseBuild) {
+	await vscode.window.withProgress({
 		location: vscode.ProgressLocation.Notification,
 		// location: vscode.ProgressLocation.Window,
 		// title: "Database Build",
@@ -250,25 +267,30 @@ export async function buildDatabase() {
 		// 	console.log("User canceled the long running operation");
 		// });
 
-		progress.report({ increment: 0, message: "Building Database..." });
+		if ((buildOption === DatabaseBuild.CSCOPE) || (buildOption === DatabaseBuild.BOTH)) {
+			progress.report({ increment: 0, message: "Building Database..." });
 
-		// showMessageWindow('Building Database...');
+			// showMessageWindow('Building cscope Database...');
 
-		await doCLI(`cscope -Rcbf cscope.out`);
+			await doCLI(`cscope -Rcbkf cscope.out`);
 
-		await delay(500);
+			await delay(500);
+		}
 
-		progress.report({ increment: 50, message: "Building ctags database..." });
+		if ((buildOption === DatabaseBuild.CTAGS) || (buildOption === DatabaseBuild.BOTH)) {
+			progress.report({ increment: 50, message: "Building ctags database..." });
 
-		await doCLI(`ctags --fields=+i -Rno ctags.out`);
+			// showMessageWindow('Building ctags Database...');
 
-		await delay(500);
+			await doCLI(`ctags --fields=+i -Rno ctags.out`);
 
+			await delay(500);
+		}
 		progress.report({ increment: 100, message: "Finished building database" });
+		
+		// showMessageWindow('Finished building database');
 
 		await delay(1500);
-
-		// showMessageWindow('Finished building database');
 	});
 }
 
@@ -421,5 +443,5 @@ export function showMessageWindow(msg: string, logLevl: LogLevel = LogLevel.INFO
 }
 
 export async function delay(ms: number) {
-	return new Promise( resolve => setTimeout(resolve, ms) );
+	return new Promise(resolve => setTimeout(resolve, ms));
 }
