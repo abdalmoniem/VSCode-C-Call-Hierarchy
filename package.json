@@ -3,7 +3,7 @@
     "publisher": "AbdAlMoniem-AlHifnawy",
     "displayName": "C Call Hierarchy",
     "description": "Build C Call Hierarchy using cscope",
-    "version": "1.7.3",
+    "version": "1.7.4",
     "engines": {
         "vscode": "^1.52.0"
     },
