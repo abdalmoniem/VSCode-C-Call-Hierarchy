@@ -3,7 +3,7 @@
     "publisher": "AbdAlMoniem-AlHifnawy",
     "displayName": "C Call Hierarchy",
     "description": "Build C Call Hierarchy using cscope",
-    "version": "1.7.4",
+    "version": "1.8.0",
     "engines": {
         "vscode": "^1.52.0"
     },
@@ -44,7 +44,9 @@
         "commands": [
             {
                 "command": "cCallHierarchy.build",
-                "title": "C Call Hierarchy: Build Database",
+                "category": "C Call Hierarchy",
+                "enablement": "resourceLangId == c || resourceLangId == cpp && editorTextFocus",
+                "title": "Build Database",
                 "icon": "$(extensions-view-icon)"
             }
         ],

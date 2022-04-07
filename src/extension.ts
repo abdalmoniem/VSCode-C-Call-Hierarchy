@@ -30,37 +30,45 @@ enum DatabaseBuild {
 }
 
 export function activate(context: vscode.ExtensionContext) {
-	context.subscriptions.push(vscode.commands.registerCommand('cCallHierarchy.build', () => buildDatabase(DatabaseBuild.BOTH)));
+	context.subscriptions.push(
+		vscode.commands.registerCommand('cCallHierarchy.build', () => buildDatabase(DatabaseBuild.BOTH))
+	);
 
-	vscode.languages.registerCallHierarchyProvider(
-		{
-			scheme: 'file',
-			language: 'c'
-		},
-		new CCallHierarchyProvider());
+	context.subscriptions.push(
+		vscode.languages.registerCallHierarchyProvider(
+			{
+				scheme: 'file',
+				language: 'c'
+			},
+			new CCallHierarchyProvider()
+		)
+	);
 
-	vscode.languages.registerCallHierarchyProvider(
-		{
-			scheme: 'file',
-			language: 'cpp'
-		},
-		new CCallHierarchyProvider());
+	context.subscriptions.push(
+		vscode.languages.registerCallHierarchyProvider(
+			{
+				scheme: 'file',
+				language: 'cpp'
+			},
+			new CCallHierarchyProvider()
+		)
+	);
 }
 
 export function deactivate() { }
 
 class FuncInfo {
 	name: string;
-	fileName: string;
+	filePath: string;
 	description: string;
-	position: number;
+	linePosition: number;
 
-	constructor(name?: string, fileName?: string, position?: number) {
+	constructor(name?: string, filePath?: string, position?: number, description?: string) {
 		this.name = name ?? '';
-		this.fileName = fileName ?? '';
-		this.position = position ?? -1;
+		this.filePath = filePath ?? '';
+		this.linePosition = position ?? -1;
 
-		this.description = '';
+		this.description = description ?? '';
 	}
 
 	public static convertToFuncInfo(line: string): FuncInfo {
@@ -69,7 +77,7 @@ class FuncInfo {
 	}
 
 	public getFileName(): string {
-		let folders = this.fileName.split(/[\\/]/);
+		let folders = this.filePath.split(/[\\/]/);
 
 		return folders.slice(-1)[0];
 	}
@@ -85,174 +93,133 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
 	async prepareCallHierarchy(
 		document: vscode.TextDocument,
 		position: vscode.Position,
-		token: vscode.CancellationToken): Promise<vscode.CallHierarchyItem | vscode.CallHierarchyItem[] | null | undefined> {
-		if (!token.isCancellationRequested) {
-			let buildOption = 0;
-			
-			if (!fs.existsSync(`${this.cwd}/cscope.out`)) {
-				showMessageWindow(`cscope database doesn't exist, rebuilding...`);
-				buildOption |= 1 << 0;
-			}
+		token: vscode.CancellationToken): Promise<vscode.CallHierarchyItem | vscode.CallHierarchyItem[] | undefined> {
+		let buildOption = 0;
 
-			if (!fs.existsSync(`${this.cwd}/ctags.out`)) {
-				showMessageWindow(`ctags database doesn't exist, rebuilding...`);
-				buildOption |= 1 << 1;
-			}
-			
-			if (buildOption > 0) {
-				await buildDatabase(buildOption as DatabaseBuild);
-			}
-
-			let wordRange = document.getWordRangeAtPosition(position);
-
-			if (wordRange !== undefined) {
-				let funcName: string = document.getText(wordRange);
-				let definition = await doCLI(`cscope -d -f cscope.out -L1 ${funcName}`);
-
-				if (definition.length > 0) {
-					let funcInfo = FuncInfo.convertToFuncInfo(definition as string);
-
-					let config = vscode.workspace.getConfiguration('ccallhierarchy');
-					let canShowFileNames = config.get('showFileNamesInSearchResults');
-					let clickJumpLocation = config.get('clickJumpLocation');
-
-					let functionRange = wordRange;
-
-					let fileLocation = vscode.Uri.file(`${document.fileName}`);
-
-					let fileName = document.fileName.split(/[\\/]/).slice(-1)[0];
-
-					let description = `${canShowFileNames ? fileName : ''} @ ${(position.line + 1).toString()}`;
-
-					if (clickJumpLocation === ClickJumpLocation.SymbolDefinition) {
-						let functionPosition = new vscode.Position(funcInfo.position - 1, 0);
-						functionRange = new vscode.Range(functionPosition, functionPosition);
-
-						fileLocation = vscode.Uri.file(`${this.cwd}/${funcInfo.fileName}`);
-
-						description = `${canShowFileNames ? funcInfo.getFileName() : ''} @ ${funcInfo.position.toString()}`;
-					}
-
-					let item = new vscode.CallHierarchyItem(
-						await getSymbolKind(funcName),
-						funcName,
-						description,
-						fileLocation,
-						functionRange,
-						functionRange);
-
-					return item;
-				}
-			}
+		if (!fs.existsSync(`${this.cwd}/cscope.out`)) {
+			showMessageWindow(`cscope database doesn't exist, rebuilding...`);
+			buildOption |= 1 << 0;
 		}
+
+		if (!fs.existsSync(`${this.cwd}/ctags.out`)) {
+			showMessageWindow(`ctags database doesn't exist, rebuilding...`);
+			buildOption |= 1 << 1;
+		}
+
+		if (buildOption > 0) {
+			await buildDatabase(buildOption as DatabaseBuild);
+		}
+
+		let wordRange = document.getWordRangeAtPosition(position);
+
+		if (wordRange !== undefined) {
+			let symbol = new FuncInfo(
+				document.getText(wordRange),
+				document.fileName.replace(this.cwd, '').replace(/[\\/]+/, ''),
+				position.line + 1);
+
+			let { description, filePath, symbolRange } = await this.getSymbolInfo(symbol, symbol.name, wordRange);
+
+			let item = new vscode.CallHierarchyItem(
+				await getSymbolKind(symbol.name),
+				symbol.name,
+				description,
+				filePath,
+				symbolRange,
+				symbolRange);
+
+			return item;
+		}
+
+		return undefined;
 	}
 
 	async provideCallHierarchyIncomingCalls(
 		item: vscode.CallHierarchyItem,
-		token: vscode.CancellationToken): Promise<vscode.CallHierarchyIncomingCall[] | null | undefined> {
-		if (!token.isCancellationRequested) {
-			let incomingCalls: Array<vscode.CallHierarchyIncomingCall> = new Array();
+		token: vscode.CancellationToken): Promise<vscode.CallHierarchyIncomingCall[]> {
+		let incomingCalls: Array<vscode.CallHierarchyIncomingCall> = new Array();
 
-			let callers = await findCallers(item.name);
+		let callers = await findCallers(item.name);
 
-			for (let callerItem of callers) {
-				let ranges: Array<vscode.Range> = new Array();
+		for (let callerItem of callers) {
+			let { description, filePath, symbolRange } = await this.getSymbolInfo(callerItem, item.name);
 
-				let config = vscode.workspace.getConfiguration('ccallhierarchy');
-				let canShowFileNames = config.get('showFileNamesInSearchResults');
-				let clickJumpLocation = config.get('clickJumpLocation');
+			let fromCaller = new vscode.CallHierarchyItem(
+				await getSymbolKind(callerItem.name),
+				callerItem.name,
+				description,
+				filePath,
+				symbolRange,
+				symbolRange);
 
-				let callerItemPosition = new vscode.Position(callerItem.position - 1, 0);
-
-				let fileLocation = vscode.Uri.file(`${this.cwd}/${callerItem.fileName}`);
-
-				let description = `${canShowFileNames ? callerItem.getFileName() : ''} @ ${callerItem.position.toString()}`;
-
-				if (clickJumpLocation === ClickJumpLocation.SymbolDefinition) {
-					let definition = await doCLI(`cscope -d -f cscope.out -L1 ${callerItem.name}`);
-
-					if (definition.length > 0) {
-						let funcInfo = FuncInfo.convertToFuncInfo(definition as string);
-
-						callerItemPosition = new vscode.Position(funcInfo.position - 1, 0);
-
-						fileLocation = vscode.Uri.file(`${this.cwd}/${funcInfo.fileName}`);
-
-						description = `${canShowFileNames ? funcInfo.getFileName() : ''} @ ${funcInfo.position.toString()}`;
-					}
-				}
-
-				let callerItemRange = new vscode.Range(callerItemPosition, callerItemPosition);
-
-				let fromCaller = new vscode.CallHierarchyItem(
-					await getSymbolKind(callerItem.name),
-					callerItem.name,
-					description,
-					fileLocation,
-					callerItemRange,
-					callerItemRange);
-
-				ranges.push(callerItemRange);
-
-				incomingCalls.push(new vscode.CallHierarchyIncomingCall(fromCaller, ranges));
-			}
-
-			return incomingCalls;
+			incomingCalls.push(new vscode.CallHierarchyIncomingCall(fromCaller, [symbolRange]));
 		}
+
+		return incomingCalls;
 	}
 
 	async provideCallHierarchyOutgoingCalls(
 		item: vscode.CallHierarchyItem,
-		token: vscode.CancellationToken): Promise<vscode.CallHierarchyOutgoingCall[] | null | undefined> {
-		if (!token.isCancellationRequested) {
-			let outgoingCalls: Array<vscode.CallHierarchyOutgoingCall> = new Array();
+		token: vscode.CancellationToken): Promise<vscode.CallHierarchyOutgoingCall[]> {
+		let outgoingCalls: Array<vscode.CallHierarchyOutgoingCall> = new Array();
 
-			let callees = await findCallees(item.name);
+		let callees = await findCallees(item.name);
 
-			for (let calleeItem of callees) {
-				let ranges: Array<vscode.Range> = new Array();
+		for (let calleeItem of callees) {
+			let { description, filePath, symbolRange } = await this.getSymbolInfo(calleeItem, calleeItem.name);
 
-				let config = vscode.workspace.getConfiguration('ccallhierarchy');
-				let canShowFileNames = config.get('showFileNamesInSearchResults');
-				let clickJumpLocation = config.get('clickJumpLocation');
+			let toCallee = new vscode.CallHierarchyItem(
+				await getSymbolKind(calleeItem.name),
+				calleeItem.name,
+				description,
+				filePath,
+				symbolRange,
+				symbolRange);
 
-				let calleeItemPosition = new vscode.Position(calleeItem.position - 1, 0);
-
-				let fileLocation = vscode.Uri.file(`${this.cwd}/${calleeItem.fileName}`);
-
-				let description = `${canShowFileNames ? calleeItem.getFileName() : ''} @ ${calleeItem.position.toString()}`;
-
-				if (clickJumpLocation === ClickJumpLocation.SymbolDefinition) {
-					let definition = await doCLI(`cscope -d -f cscope.out -L1 ${calleeItem.name}`);
-
-					if (definition.length > 0) {
-						let funcInfo = FuncInfo.convertToFuncInfo(definition as string);
-
-						calleeItemPosition = new vscode.Position(funcInfo.position - 1, 0);
-
-						fileLocation = vscode.Uri.file(`${this.cwd}/${funcInfo.fileName}`);
-
-						description = `${canShowFileNames ? funcInfo.getFileName() : ''} @ ${funcInfo.position.toString()}`;
-					}
-				}
-
-				let calleeItemRange = new vscode.Range(calleeItemPosition, calleeItemPosition);
-
-				let toCallee = new vscode.CallHierarchyItem(
-					await getSymbolKind(calleeItem.name),
-					calleeItem.name,
-					description,
-					fileLocation,
-					calleeItemRange,
-					calleeItemRange);
-
-				ranges.push(calleeItemRange);
-
-				outgoingCalls.push(new vscode.CallHierarchyOutgoingCall(toCallee, ranges));
-			}
-
-			return outgoingCalls;
+			outgoingCalls.push(new vscode.CallHierarchyOutgoingCall(toCallee, [symbolRange]));
 		}
+
+		return outgoingCalls;
+	}
+
+	private async getSymbolInfo(symbol: FuncInfo, relative: string, range?: vscode.Range) {
+		let config = vscode.workspace.getConfiguration('ccallhierarchy');
+		let canShowFileNames = config.get('showFileNamesInSearchResults');
+		let clickJumpLocation = config.get('clickJumpLocation');
+
+		let symbolRange = range ?? await this.getWordRange(`${this.cwd}/${symbol.filePath}`, symbol.linePosition - 1, relative);
+
+		let filePath = vscode.Uri.file(`${this.cwd}/${symbol.filePath}`);
+
+		let description = `${canShowFileNames ? symbol.getFileName() : ''} @ ${symbol.linePosition.toString()}`;
+
+		if (clickJumpLocation === ClickJumpLocation.SymbolDefinition) {
+			let definition = await doCLI(`cscope -d -f cscope.out -L1 ${relative}`);
+
+			if (definition.length > 0) {
+				let funcInfo = FuncInfo.convertToFuncInfo(definition as string);
+
+				symbolRange = await this.getWordRange(`${this.cwd}/${funcInfo.filePath}`, funcInfo.linePosition - 1, funcInfo.name);
+
+				filePath = vscode.Uri.file(`${this.cwd}/${funcInfo.filePath}`);
+
+				description = `${canShowFileNames ? funcInfo.getFileName() : ''} @ ${funcInfo.linePosition.toString()}`;
+			}
+		}
+		return { description, filePath, symbolRange };
+	}
+
+	private async getWordRange(filePath: string, linePosition: number, word: string) {
+		let document = await vscode.workspace.openTextDocument(filePath);
+		let text = document.lineAt(linePosition);
+
+		let wordIndex = new RegExp(`\\b${word}\\b`, "i").exec(text.text)!.index;
+
+		let callerItemPositionStart = new vscode.Position(linePosition, wordIndex);
+		let callerItemPositionEnd = new vscode.Position(linePosition, wordIndex + word.length);
+		let callerItemRange = new vscode.Range(callerItemPositionStart, callerItemPositionEnd);
+
+		return callerItemRange;
 	}
 }
 
@@ -287,7 +254,7 @@ export async function buildDatabase(buildOption: DatabaseBuild) {
 			await delay(500);
 		}
 		progress.report({ increment: 100, message: "Finished building database" });
-		
+
 		// showMessageWindow('Finished building database');
 
 		await delay(1500);
@@ -407,8 +374,7 @@ export async function doCLI(command: string): Promise<string> {
 			{ cwd: dir },
 			(error: process.ExecException | null, stdout: string, stderr: string) => {
 				if (error) {
-					showMessageWindow(`exec error: ${error}`, LogLevel.ERROR);
-					showMessageWindow(stderr, LogLevel.ERROR);
+					// showMessageWindow(stderr, LogLevel.ERROR);
 					reject(stderr);
 				} else {
 					resolve(stdout);
