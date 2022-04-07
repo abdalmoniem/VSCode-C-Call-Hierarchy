@@ -10,7 +10,7 @@
 
 import * as fs from 'fs';
 import * as vscode from 'vscode';
-import * as process from 'child_process';
+import * as childProcess from 'child_process';
 
 enum ClickJumpLocation {
 	SymbolDefinition = 'Symbol Definition',
@@ -296,7 +296,9 @@ export async function findCallees(funcName: string): Promise<Array<FuncInfo>> {
 }
 
 export async function getSymbolKind(symbolName: string): Promise<vscode.SymbolKind> {
-	let data = await doCLI(`readtags -t ctags.out -F "(list $name \\" \\" $input \\" \\" $line \\" \\" $kind #t)" ${symbolName}`);
+	let data = process.platform === 'win32' ?
+					await doCLI(`readtags -t ctags.out -F "(list $name \\" \\" $input \\" \\" $line \\" \\" $kind #t)" ${symbolName}`) :
+					await doCLI(`readtags -t ctags.out -F '(list $name " " $input " " $line " " $kind #t)' ${symbolName}`);
 
 	let lines = data.split(/\n/);
 
@@ -369,10 +371,10 @@ export async function doCLI(command: string): Promise<string> {
 	let dir = getWorkspaceRootPath();
 
 	return new Promise((resolve, reject) => {
-		process.exec(
+		childProcess.exec(
 			command,
 			{ cwd: dir },
-			(error: process.ExecException | null, stdout: string, stderr: string) => {
+			(error: childProcess.ExecException | null, stdout: string, stderr: string) => {
 				if (error) {
 					// showMessageWindow(stderr, LogLevel.ERROR);
 					reject(stderr);
