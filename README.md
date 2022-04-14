@@ -45,6 +45,7 @@ make sure to add the following to the `PATH` environment variable:
 -----------------------------------------------------------------------------------------------------------
 
 ## Using C Call Hierarchy
+* Upon extension activation, you'll be prompted to install the `CSCOPE` and `CTAGS` dependencies (if you're on windows for now), click `Yes` to install these dependencies
 * Open the call hierarchy by selecting a function, and issue the show command `Show Call Hierarchy` (from the command palette or from the editor context menu).
 * The extension tries to build the `cscope` & `ctags` databases when you issue the `Show Call Hierarchy` command and the `cscope.out` and/or `ctags.out` file[s] is/are not found. If this doesn't happen and the files are not created, you can manually issue a database build from the command palette using the command `C Call Hierarchy: Build Database`.
 * explore extension settings to configure how the extension works as you like.

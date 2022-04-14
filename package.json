@@ -3,7 +3,7 @@
     "publisher": "AbdAlMoniem-AlHifnawy",
     "displayName": "C Call Hierarchy",
     "description": "Build C Call Hierarchy using cscope",
-    "version": "1.8.1",
+    "version": "1.11.33",
     "engines": {
         "vscode": "^1.52.0"
     },
@@ -12,18 +12,13 @@
         "name": "AbdAlMoniem AlHifnawy",
         "url": "https://abdalmoniem.github.io"
     },
-    "os": [
-        "Windows",
-        "Linux",
-        "MacOS"
-    ],
     "repository": {
         "type": "git",
-        "url": "https://github.com/abdalmoniem/C-Call-Hierarchy"
+        "url": "https://github.com/abdalmoniem/VSCode-C-Call-Hierarchy"
     },
     "bugs": {
         "email": "hifnawy_moniem@hotmail.com",
-        "url": "https://github.com/abdalmoniem/C-Call-Hierarchy/issues"
+        "url": "https://github.com/abdalmoniem/VSCode-C-Call-Hierarchy/issues"
     },
     "categories": [
         "Programming Languages"
@@ -47,6 +42,13 @@
                 "category": "C Call Hierarchy",
                 "enablement": "resourceLangId == c || resourceLangId == cpp && editorTextFocus",
                 "title": "Build Database",
+                "icon": "$(extensions-view-icon)"
+            },
+            {
+                "command": "cCallHierarchy.resolveDependencies",
+                "category": "C Call Hierarchy",
+                "enablement": "resourceLangId == c || resourceLangId == cpp && editorTextFocus",
+                "title": "Resolve Dependencies",
                 "icon": "$(extensions-view-icon)"
             }
         ],
@@ -73,7 +75,6 @@
                             "Jump to where the selected Symbol is called"
                         ],
                         "description": "Search Result Click Jump Location"
-                        
                     },
                     "ccallhierarchy.showMessages": {
                         "order": 2,
@@ -94,14 +95,19 @@
         "test": "node ./out/test/runTest.js"
     },
     "devDependencies": {
+        "@types/adm-zip": "^0.5.0",
+        "@types/command-exists": "^1.2.0",
         "@types/glob": "^7.1.3",
         "@types/mocha": "^8.0.4",
         "@types/node": "^12.11.7",
         "@types/vscode": "^1.52.0",
         "@typescript-eslint/eslint-plugin": "^4.9.0",
         "@typescript-eslint/parser": "^4.9.0",
+        "adm-zip": "^0.5.9",
+        "command-exists": "^1.2.9",
         "eslint": "^7.15.0",
         "glob": "^7.1.6",
+        "lookpath": "^1.2.2",
         "mocha": "^8.1.3",
         "typescript": "^4.1.2",
         "vscode-test": "^1.4.1"
