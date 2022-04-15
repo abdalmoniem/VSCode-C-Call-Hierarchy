@@ -16,28 +16,38 @@ import * as vscode from 'vscode';
 import { lookpath } from 'lookpath';
 import * as callHierarchyProvider from './cCallHierarchyProvider';
 
-// let CSCOPE_PATH = 'cscope';
-// let CTAGS_PATH = 'ctags';
-// let READTAGS_PATH = 'readtags';
-
-const outputChannel = vscode.window.createOutputChannel("C Call Hierarchy");
-const statusbarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 0);
+let outputChannel: vscode.OutputChannel;
+let statusbarItem: vscode.StatusBarItem;
+let extensionContext: vscode.ExtensionContext;
 
 export async function activate(context: vscode.ExtensionContext) {
-	context.subscriptions.push(vscode.commands.registerCommand('cCallHierarchy.resolveDependencies', () => resolveDependencies(context)));
+	extensionContext = context;
+	outputChannel = vscode.window.createOutputChannel("C Call Hierarchy");
+	statusbarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 0);
 
-	await resolveDependencies(context);
+	outputChannel.show();
+	outputChannel.appendLine('activating C Call Hierarchy...');
+	context.subscriptions.push(vscode.commands.registerCommand('cCallHierarchy.resolveDependencies', async () => await resolveDependencies()));
+
+	if (await resolveDependencies()) {
+		initializeSubscriptions();
+	}
+	outputChannel.appendLine('C Call Hierarchy activated!');
 }
 
 export function deactivate() { }
 
-async function resolveDependencies(context: vscode.ExtensionContext) {
+export async function resolveDependencies(): Promise<boolean> {
 	let dependenciesFound = false;
 
 	if (process.platform === 'win32') {
-		if ((await lookpath(`${process.env.USERPROFILE!}/c-call-hierarchy/cscope/cscope.exe`)) &&
-			(await lookpath(`${process.env.USERPROFILE!}/c-call-hierarchy/ctags/ctags.exe`)) &&
-			(await lookpath(`${process.env.USERPROFILE!}/c-call-hierarchy/ctags/readtags.exe`))) {
+		if ((await lookpath(`${process.env.USERPROFILE!}/c-call-hierarchy/cscope/cscope.exe`, { env: process.env })) &&
+			(await lookpath(`${process.env.USERPROFILE!}/c-call-hierarchy/ctags/ctags.exe`, { env: process.env })) &&
+			(await lookpath(`${process.env.USERPROFILE!}/c-call-hierarchy/ctags/readtags.exe`, { env: process.env }))) {
+			callHierarchyProvider.setCSCOPE_PATH(`${process.env.USERPROFILE!}/c-call-hierarchy/cscope/cscope.exe`);
+			callHierarchyProvider.setCTAGS_PATH(`${process.env.USERPROFILE!}/c-call-hierarchy/ctags/ctags.exe`);
+			callHierarchyProvider.setREADTAGS_PATH(`${process.env.USERPROFILE!}/c-call-hierarchy/ctags/readtags.exe`);
+
 			dependenciesFound = true;
 		}
 	}
@@ -54,27 +64,12 @@ async function resolveDependencies(context: vscode.ExtensionContext) {
 		if (result === 'Yes') {
 			if (process.platform === 'win32') {
 				await installCSCOPE_CTAGS();
-
-				context.subscriptions.push(
-					vscode.commands.registerCommand('cCallHierarchy.build', () => callHierarchyProvider.buildDatabase(callHierarchyProvider.DatabaseType.BOTH)),
-					vscode.languages.registerCallHierarchyProvider(
-						{
-							scheme: 'file',
-							language: 'c'
-						},
-						new callHierarchyProvider.CCallHierarchyProvider()
-					),
-					vscode.languages.registerCallHierarchyProvider(
-						{
-							scheme: 'file',
-							language: 'cpp'
-						},
-						new callHierarchyProvider.CCallHierarchyProvider()
-					)
-				);
 			} else {
 				// install cscope / ctags on a linux / unix platform
 			}
+
+			await initializeSubscriptions();
+
 			statusbarItem.hide();
 		} else {
 			// callHierarchyProvider.showMessageWindow('Extension deactivated, dependencies not found!!!', callHierarchyProvider.LogLevel.ERROR);
@@ -87,6 +82,37 @@ async function resolveDependencies(context: vscode.ExtensionContext) {
 			statusbarItem.show();
 		}
 	}
+
+	return dependenciesFound;
+}
+
+export async function initializeSubscriptions() {
+	vscode.commands.executeCommand('setContext', 'enableCommands', true);
+
+	let commands = await vscode.commands.getCommands(true);
+
+	if (!commands.includes('cCallHierarchy.build')) {
+		extensionContext.subscriptions.push(
+			vscode.commands.registerCommand('cCallHierarchy.build', async () => await callHierarchyProvider.buildDatabase(callHierarchyProvider.DatabaseType.BOTH))
+		);
+	}
+
+	extensionContext.subscriptions.push(
+		vscode.languages.registerCallHierarchyProvider(
+			{
+				scheme: 'file',
+				language: 'c'
+			},
+			new callHierarchyProvider.CCallHierarchyProvider()
+		),
+		vscode.languages.registerCallHierarchyProvider(
+			{
+				scheme: 'file',
+				language: 'cpp'
+			},
+			new callHierarchyProvider.CCallHierarchyProvider()
+		)
+	);
 }
 
 export async function installCSCOPE_CTAGS() {
@@ -128,7 +154,7 @@ export async function installCSCOPE_CTAGS() {
 	callHierarchyProvider.setREADTAGS_PATH(path.resolve(`${process.env.USERPROFILE!}/c-call-hierarchy/ctags/readtags.exe`));
 }
 
-async function download(url: string, downloadPath: string): Promise<string> {
+export async function download(url: string, downloadPath: string): Promise<string> {
 	outputChannel.show();
 	outputChannel.appendLine(`downloading ${url} to ${path.resolve(downloadPath)}\n`);
 
