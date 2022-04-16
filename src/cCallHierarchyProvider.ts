@@ -276,7 +276,7 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
       return outgoingCalls;
    }
 
-   private async getSymbolInfo(symbol: SymbolInfo, relative: string, range?: vscode.Range) {
+   private async getSymbolInfo(symbol: SymbolInfo, relative: string, range?: vscode.Range): Promise<{ description: string; filePath: vscode.Uri; symbolRange: vscode.Range; }> {
       let config = vscode.workspace.getConfiguration('ccallhierarchy');
       let canShowFileNames = config.get('showFileNamesInSearchResults');
       let clickJumpLocation = config.get('clickJumpLocation');
@@ -303,7 +303,7 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
       return { description, filePath, symbolRange };
    }
 
-   private async getWordRange(filePath: string, linePosition: number, word: string) {
+   private async getWordRange(filePath: string, linePosition: number, word: string): Promise<vscode.Range> {
       let document = await vscode.workspace.openTextDocument(filePath);
       let text = document.lineAt(linePosition);
 
@@ -317,7 +317,7 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
    }
 }
 
-export async function buildDatabase(buildOption: DatabaseType) {
+export async function buildDatabase(buildOption: DatabaseType): Promise<void> {
    await vscode.window.withProgress({
       location: vscode.ProgressLocation.Notification,
       // location: vscode.ProgressLocation.Window,
@@ -405,7 +405,7 @@ export async function findCallees(funcName: string): Promise<Array<SymbolInfo>> 
    return callees;
 }
 
-export async function showHierarchy(provider: CCallHierarchyProvider) {
+export async function showHierarchy(provider: CCallHierarchyProvider): Promise<void> {
    // provider.showIncludeHierarchy = true;
    await vscode.commands.executeCommand('references-view.showCallHierarchy');
 }
@@ -504,7 +504,7 @@ export function getWorkspaceRootPath(): string {
    return vscode.workspace.workspaceFolders !== undefined ? vscode.workspace.workspaceFolders[0].uri.fsPath : '';
 }
 
-export function showMessageWindow(msg: string, logLevl: LogLevel = LogLevel.INFO) {
+export function showMessageWindow(msg: string, logLevl: LogLevel = LogLevel.INFO): void {
    let config = vscode.workspace.getConfiguration('ccallhierarchy');
    let canShowMessages = config.get('showMessages');
 
@@ -525,6 +525,6 @@ export function showMessageWindow(msg: string, logLevl: LogLevel = LogLevel.INFO
    }
 }
 
-async function delay(ms: number) {
-   return new Promise(resolve => setTimeout(resolve, ms));
+async function delay(ms: number): Promise<undefined> {
+   return new Promise<undefined>(resolve => setTimeout(resolve, ms));
 }

@@ -11,26 +11,15 @@ The main feature is creating a call hierarchy for C code.
 ## Requirements
 This extension uses the cscope, ctags and, readtags (**_universal-ctags_**)
 
-### Installation on Linux
-use native package manager:
-
-e.g.: on debian:
-```shell
-sudo apt install cscope universal-ctags
-```
-
-or brew:
+### Installation on Linux/Unix (Mac)
+use `brew`
 
 ```shell
 brew install cscope universal-ctags
 ```
 
-### Installation on Mac
-you can use brew:
-
-```shell
-brew install cscope universal-ctags
-```
+> N.B.1 `brew`'s `universal-ctags` provides the best implementation of `ctags` and `readtags` so it is highly recommended to use `brew` to install it
+> N.B.2 it is highly un-recommended to use the native package manager to install this package unless you're sure that it's going to install the same implementation as `brew`'s
 
 ### Installation on Windows
 * install `cscope` using cygwin or any other unix like environment or download it from [here](https://github.com/abdalmoniem/C-Call-Hierarchy/releases/download/v1.7.4/cscope.zip)

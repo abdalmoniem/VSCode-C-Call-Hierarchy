@@ -22,10 +22,10 @@ let extensionContext: vscode.ExtensionContext;
 
 export async function activate(context: vscode.ExtensionContext) {
 	extensionContext = context;
+
 	outputChannel = vscode.window.createOutputChannel("C Call Hierarchy");
 	statusbarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 0);
 
-	outputChannel.show();
 	outputChannel.appendLine('activating C Call Hierarchy...');
 	context.subscriptions.push(vscode.commands.registerCommand('cCallHierarchy.resolveDependencies', async () => await resolveDependencies()));
 
@@ -49,6 +49,10 @@ export async function resolveDependencies(): Promise<boolean> {
 			callHierarchyProvider.setREADTAGS_PATH(`${process.env.USERPROFILE!}/c-call-hierarchy/ctags/readtags.exe`);
 
 			dependenciesFound = true;
+
+			await initializeSubscriptions();
+
+			updateStatusbar(false);
 		}
 	}
 
@@ -56,34 +60,51 @@ export async function resolveDependencies(): Promise<boolean> {
 		(await lookpath(callHierarchyProvider.getCTAGS_PATH())) &&
 		(await lookpath(callHierarchyProvider.getREADTAGS_PATH()))) {
 		dependenciesFound = true;
+
+		await initializeSubscriptions();
+
+		updateStatusbar(false);
 	}
 
 	if (!dependenciesFound) {
-		const result = await vscode.window.showWarningMessage(
-			'CSCOPE or CTAGS are not installed on your system, do you want to download and install them?', 'Yes', 'No');
-		if (result === 'Yes') {
+		if (await vscode.window.showWarningMessage(
+			'CSCOPE or CTAGS are not installed on your system, do you want to download and install them?', 'Yes', 'No') === 'Yes') {
 			if (process.platform === 'win32') {
 				await installCSCOPE_CTAGS();
+
+				await resolveDependencies();
 			} else {
 				// install cscope / ctags on a linux / unix platform
+				if (await vscode.window.showInformationMessage(
+					'Please use your native package manager to install cscope & universal-ctags', 'copy dependencies', 'dismiss') === 'copy dependencies') {
+					await vscode.env.clipboard.writeText('install cscope universal-ctags');
+				}
+
+				updateStatusbar(true);
 			}
-
-			await initializeSubscriptions();
-
-			statusbarItem.hide();
 		} else {
 			// callHierarchyProvider.showMessageWindow('Extension deactivated, dependencies not found!!!', callHierarchyProvider.LogLevel.ERROR);
 
-			statusbarItem.color = '#ff0000';
-			statusbarItem.command = 'cCallHierarchy.resolveDependencies';
-			statusbarItem.text = '🛇 Install CSCOPE & CTAGS';
-			statusbarItem.tooltip = 'Install CSCOPE & CTAGS utilities';
-			statusbarItem.accessibilityInformation = { label: 'Install CSCOPE & CTAGS utilities' };
-			statusbarItem.show();
+			updateStatusbar(true);
 		}
+	} else {
+		await resolveDependencies();
 	}
 
 	return dependenciesFound;
+}
+
+export function updateStatusbar(show: boolean): void {
+	if (show) {
+		statusbarItem.color = '#ff0000';
+		statusbarItem.command = 'cCallHierarchy.resolveDependencies';
+		statusbarItem.text = '🛇 Install CSCOPE & CTAGS';
+		statusbarItem.tooltip = 'Install CSCOPE & CTAGS utilities';
+		statusbarItem.accessibilityInformation = { label: 'Install CSCOPE & CTAGS utilities' };
+		statusbarItem.show();
+	} else {
+		statusbarItem.hide();
+	}
 }
 
 export async function initializeSubscriptions() {
