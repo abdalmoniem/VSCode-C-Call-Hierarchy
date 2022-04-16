@@ -31,23 +31,23 @@ export function setREADTAGS_PATH(path: string): void {
 }
 
 export enum ClickJumpLocation {
-	SymbolDefinition = 'Symbol Definition',
-	SymbolCall = 'Symbol Call'
+   SymbolDefinition = 'Symbol Definition',
+   SymbolCall = 'Symbol Call'
 }
 
 export enum LogLevel {
-	INFO,
-	WARN,
-	ERROR
+   INFO,
+   WARN,
+   ERROR
 }
 
 export enum DatabaseType {
-	CSCOPE = 1,
-	CTAGS = 2,
-	BOTH = 3
+   CSCOPE = 1,
+   CTAGS = 2,
+   BOTH = 3
 }
 
-export class FuncInfo {
+export class SymbolInfo {
    name: string;
    filePath: string;
    description: string;
@@ -61,9 +61,17 @@ export class FuncInfo {
       this.description = description ?? '';
    }
 
-   public static convertToFuncInfo(line: string): FuncInfo {
-      let lineSplit = line.split(/\s+/);
-      return new FuncInfo(lineSplit[1], lineSplit[0], Number(lineSplit[2]));
+   public static convertToFuncInfo(line: string): SymbolInfo {
+      let words = line.split(/\s+/);
+      return new SymbolInfo(words[1], words[0], Number(words[2]));
+   }
+
+   public static convertToSymbolInfo(line: string): SymbolInfo {
+      let words = line.split(/\s+/);
+
+      let name = words[0].split(/[\\/]/).slice(-1)[0];
+
+      return new SymbolInfo(name, words[0], Number(words[2]));
    }
 
    public getFileName(): string {
@@ -73,17 +81,34 @@ export class FuncInfo {
    }
 }
 
+export class CCallHierarchyItem extends vscode.CallHierarchyItem {
+   constructor(
+      public readonly kind: vscode.SymbolKind,
+      public readonly name: string,
+      public readonly detail: string,
+      public readonly uri: vscode.Uri,
+      public readonly range: vscode.Range,
+      public readonly selectionRange: vscode.Range,
+      public readonly isIncludeItem: boolean
+   ) {
+      super(kind, name, detail, uri, range, selectionRange);
+   }
+}
+
 export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
    private readonly cwd: string;
 
+   public showIncludeHierarchy: boolean;
+
    constructor() {
       this.cwd = getWorkspaceRootPath();
+      this.showIncludeHierarchy = false;
    }
 
    async prepareCallHierarchy(
       document: vscode.TextDocument,
       position: vscode.Position,
-      token: vscode.CancellationToken): Promise<vscode.CallHierarchyItem | vscode.CallHierarchyItem[] | undefined> {
+      token: vscode.CancellationToken): Promise<CCallHierarchyItem | CCallHierarchyItem[] | undefined> {
       let buildOption = 0;
       let infoMessage = '';
 
@@ -102,79 +127,156 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
          await buildDatabase(buildOption as DatabaseType);
       }
 
-      let wordRange = document.getWordRangeAtPosition(position);
+      let text = document.lineAt(position.line).text;
 
-      if (wordRange !== undefined) {
-         let symbol = new FuncInfo(
-            document.getText(wordRange),
-            document.fileName.replace(this.cwd, '').replace(/[\\/]+/, ''),
-            position.line + 1);
+      let regex = /#include\s*[<"]?(?<fileName>\w+.h)[">]?\s*/;
 
-         let { description, filePath, symbolRange } = await this.getSymbolInfo(symbol, symbol.name, wordRange);
+      let item;
+      if (regex.test(text)) {
+         let match = regex.exec(text);
+         let fileName = match!.groups!.fileName;
 
-         let item = new vscode.CallHierarchyItem(
-            await getSymbolKind(symbol.name),
-            symbol.name,
-            description,
-            filePath,
-            symbolRange,
-            symbolRange);
+         item = new CCallHierarchyItem(
+            vscode.SymbolKind.File,
+            fileName,
+            `@ ${position.line.toString()}`,
+            document.uri,
+            new vscode.Range(new vscode.Position(position.line, match!.index), new vscode.Position(position.line, text.length)),
+            new vscode.Range(new vscode.Position(position.line, match!.index), new vscode.Position(position.line, text.length)),
+            true
+         );
+      } else {
+         // if (!this.showIncludeHierarchy) {
+         let wordRange = document.getWordRangeAtPosition(position);
 
-         return item;
+         if (wordRange !== undefined) {
+            let symbol = new SymbolInfo(
+               document.getText(wordRange),
+               document.fileName.replace(this.cwd, '').replace(/[\\/]+/, ''),
+               position.line + 1);
+
+            let { description, filePath, symbolRange } = await this.getSymbolInfo(symbol, symbol.name, wordRange);
+
+            item = new CCallHierarchyItem(
+               await getSymbolKind(symbol.name),
+               symbol.name,
+               description,
+               filePath,
+               symbolRange,
+               symbolRange,
+               false
+            );
+         }
+         // }
       }
 
-      return undefined;
+      return item;
    }
 
    async provideCallHierarchyIncomingCalls(
-      item: vscode.CallHierarchyItem,
+      item: CCallHierarchyItem,
       token: vscode.CancellationToken): Promise<vscode.CallHierarchyIncomingCall[]> {
       let incomingCalls: Array<vscode.CallHierarchyIncomingCall> = new Array();
 
-      let callers = await findCallers(item.name);
+      if (item.isIncludeItem) {
+         let includers: Array<SymbolInfo> = await findIncluders(item.name);
 
-      for (let callerItem of callers) {
-         let { description, filePath, symbolRange } = await this.getSymbolInfo(callerItem, item.name);
+         for (let includer of includers) {
+            let symbolRange = await this.getWordRange(`${this.cwd}/${includer.filePath}`, includer.linePosition - 1, item.name);
 
-         let fromCaller = new vscode.CallHierarchyItem(
-            await getSymbolKind(callerItem.name),
-            callerItem.name,
-            description,
-            filePath,
-            symbolRange,
-            symbolRange);
+            let filePath = vscode.Uri.file(`${this.cwd}/${includer.filePath}`);
 
-         incomingCalls.push(new vscode.CallHierarchyIncomingCall(fromCaller, [symbolRange]));
+            let description = `@ ${includer.linePosition.toString()}`;
+
+            let fromCaller = new CCallHierarchyItem(
+               vscode.SymbolKind.File,
+               includer.name,
+               description,
+               filePath,
+               symbolRange,
+               symbolRange,
+               true
+            );
+
+            incomingCalls.push(new vscode.CallHierarchyIncomingCall(fromCaller, [symbolRange]));
+         }
+      } else {
+         let callers = await findCallers(item.name);
+
+         for (let callerItem of callers) {
+            let { description, filePath, symbolRange } = await this.getSymbolInfo(callerItem, item.name);
+
+            let fromCaller = new CCallHierarchyItem(
+               await getSymbolKind(callerItem.name),
+               callerItem.name,
+               description,
+               filePath,
+               symbolRange,
+               symbolRange,
+               false
+            );
+
+            incomingCalls.push(new vscode.CallHierarchyIncomingCall(fromCaller, [symbolRange]));
+         }
       }
-
       return incomingCalls;
    }
 
    async provideCallHierarchyOutgoingCalls(
-      item: vscode.CallHierarchyItem,
+      item: CCallHierarchyItem,
       token: vscode.CancellationToken): Promise<vscode.CallHierarchyOutgoingCall[]> {
       let outgoingCalls: Array<vscode.CallHierarchyOutgoingCall> = new Array();
 
-      let callees = await findCallees(item.name);
+      if (item.isIncludeItem) {
+         const filePath = (await doCLI(`${CSCOPE_PATH} -d -f cscope.out -L7 ${item.name}`)).split(/\s+/)[0];
+         const document = await vscode.workspace.openTextDocument(`${this.cwd}/${filePath}`);
 
-      for (let calleeItem of callees) {
-         let { description, filePath, symbolRange } = await this.getSymbolInfo(calleeItem, calleeItem.name);
+         for (let lineNumber = 0; lineNumber < document.lineCount; lineNumber++) {
+            const line = document.lineAt(lineNumber).text;
 
-         let toCallee = new vscode.CallHierarchyItem(
-            await getSymbolKind(calleeItem.name),
-            calleeItem.name,
-            description,
-            filePath,
-            symbolRange,
-            symbolRange);
+            let regex = /#include\s*[<"]?(?<fileName>\w+.h)[">]?\s*/;
+            if (regex.test(line)) {
+               let match = regex.exec(line);
+               let fileName = match!.groups!.fileName;
+               let symbolRange = new vscode.Range(new vscode.Position(lineNumber, match!.index), new vscode.Position(lineNumber, line.length));
 
-         outgoingCalls.push(new vscode.CallHierarchyOutgoingCall(toCallee, [symbolRange]));
+               let toCallee = new CCallHierarchyItem(
+                  vscode.SymbolKind.File,
+                  fileName,
+                  `@ ${lineNumber.toString()}`,
+                  document.uri,
+                  symbolRange,
+                  symbolRange,
+                  true
+               );
+
+               outgoingCalls.push(new vscode.CallHierarchyOutgoingCall(toCallee, [symbolRange]));
+            }
+         }
+      } else {
+         let callees = await findCallees(item.name);
+
+         for (let calleeItem of callees) {
+            let { description, filePath, symbolRange } = await this.getSymbolInfo(calleeItem, calleeItem.name);
+
+            let toCallee = new CCallHierarchyItem(
+               await getSymbolKind(calleeItem.name),
+               calleeItem.name,
+               description,
+               filePath,
+               symbolRange,
+               symbolRange,
+               false
+            );
+
+            outgoingCalls.push(new vscode.CallHierarchyOutgoingCall(toCallee, [symbolRange]));
+         }
       }
 
       return outgoingCalls;
    }
 
-   private async getSymbolInfo(symbol: FuncInfo, relative: string, range?: vscode.Range) {
+   private async getSymbolInfo(symbol: SymbolInfo, relative: string, range?: vscode.Range) {
       let config = vscode.workspace.getConfiguration('ccallhierarchy');
       let canShowFileNames = config.get('showFileNamesInSearchResults');
       let clickJumpLocation = config.get('clickJumpLocation');
@@ -189,7 +291,7 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
          let definition = await doCLI(`${CSCOPE_PATH} -d -f cscope.out -L1 ${relative}`);
 
          if (definition.length > 0) {
-            let funcInfo = FuncInfo.convertToFuncInfo(definition as string);
+            let funcInfo = SymbolInfo.convertToFuncInfo(definition as string);
 
             symbolRange = await this.getWordRange(`${this.cwd}/${funcInfo.filePath}`, funcInfo.linePosition - 1, funcInfo.name);
 
@@ -253,8 +355,24 @@ export async function buildDatabase(buildOption: DatabaseType) {
    });
 }
 
-export async function findCallers(funcName: string): Promise<Array<FuncInfo>> {
-   let callers: Array<FuncInfo> = new Array();
+export async function findIncluders(fileName: string): Promise<Array<SymbolInfo>> {
+   let includers: Array<SymbolInfo> = new Array();
+
+   let data: string = await doCLI(`${CSCOPE_PATH} -d -f cscope.out -L8 ${fileName}`) as string;
+
+   let lines = data.split('\n');
+
+   for (let line of lines) {
+      if (line.length > 0) {
+         includers.push(SymbolInfo.convertToSymbolInfo(line));
+      }
+   }
+
+   return includers;
+}
+
+export async function findCallers(funcName: string): Promise<Array<SymbolInfo>> {
+   let callers: Array<SymbolInfo> = new Array();
 
    let data: string = await doCLI(`${CSCOPE_PATH} -d -f cscope.out -L3 ${funcName}`) as string;
 
@@ -262,7 +380,7 @@ export async function findCallers(funcName: string): Promise<Array<FuncInfo>> {
 
    for (let line of lines) {
       if (line.length > 0) {
-         let funcInfo = FuncInfo.convertToFuncInfo(line);
+         let funcInfo = SymbolInfo.convertToFuncInfo(line);
          callers.push(funcInfo);
       }
    }
@@ -270,8 +388,8 @@ export async function findCallers(funcName: string): Promise<Array<FuncInfo>> {
    return callers;
 }
 
-export async function findCallees(funcName: string): Promise<Array<FuncInfo>> {
-   let callees: Array<FuncInfo> = new Array();
+export async function findCallees(funcName: string): Promise<Array<SymbolInfo>> {
+   let callees: Array<SymbolInfo> = new Array();
 
    let data: string = await doCLI(`${CSCOPE_PATH} -d -f cscope.out -L2 ${funcName}`) as string;
 
@@ -279,12 +397,17 @@ export async function findCallees(funcName: string): Promise<Array<FuncInfo>> {
 
    for (let line of lines) {
       if (line.length > 0) {
-         let funcInfo = FuncInfo.convertToFuncInfo(line);
+         let funcInfo = SymbolInfo.convertToFuncInfo(line);
          callees.push(funcInfo);
       }
    }
 
    return callees;
+}
+
+export async function showHierarchy(provider: CCallHierarchyProvider) {
+   // provider.showIncludeHierarchy = true;
+   await vscode.commands.executeCommand('references-view.showCallHierarchy');
 }
 
 export async function getSymbolKind(symbolName: string): Promise<vscode.SymbolKind> {

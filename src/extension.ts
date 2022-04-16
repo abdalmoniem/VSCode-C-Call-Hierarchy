@@ -87,25 +87,29 @@ export async function resolveDependencies(): Promise<boolean> {
 }
 
 export async function initializeSubscriptions() {
+	let cCallHierarchyProvider = new callHierarchyProvider.CCallHierarchyProvider();
 	vscode.commands.executeCommand('setContext', 'enableCommands', true);
 
 	extensionContext.subscriptions.push(
 		!(await vscode.commands.getCommands(true)).includes('cCallHierarchy.build') ?
 			vscode.commands.registerCommand('cCallHierarchy.build', async () => await callHierarchyProvider.buildDatabase(callHierarchyProvider.DatabaseType.BOTH)) :
 			new vscode.Disposable(() => undefined),
+		!(await vscode.commands.getCommands(true)).includes('cCallHierarchy.showIncludeHierarchy') ?
+			vscode.commands.registerCommand('cCallHierarchy.showIncludeHierarchy', async () => await callHierarchyProvider.showHierarchy(cCallHierarchyProvider)) :
+			new vscode.Disposable(() => undefined),
 		vscode.languages.registerCallHierarchyProvider(
 			{
 				scheme: 'file',
 				language: 'c'
 			},
-			new callHierarchyProvider.CCallHierarchyProvider()
+			cCallHierarchyProvider
 		),
 		vscode.languages.registerCallHierarchyProvider(
 			{
 				scheme: 'file',
 				language: 'cpp'
 			},
-			new callHierarchyProvider.CCallHierarchyProvider()
+			cCallHierarchyProvider
 		)
 	);
 }

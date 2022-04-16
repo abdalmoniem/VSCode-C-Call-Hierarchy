@@ -3,7 +3,7 @@
     "publisher": "AbdAlMoniem-AlHifnawy",
     "displayName": "C Call Hierarchy",
     "description": "Build C Call Hierarchy using cscope",
-    "version": "1.11.56",
+    "version": "2.0.0",
     "engines": {
         "vscode": "^1.52.0"
     },
@@ -50,8 +50,24 @@
                 "enablement": "enableCommands",
                 "title": "Resolve Dependencies",
                 "icon": "$(extensions-view-icon)"
+            },
+            {
+                "command": "cCallHierarchy.showIncludeHierarchy",
+                "category": "C Call Hierarchy",
+                "enablement": "enableCommands",
+                "title": "Show Include Hierarchy",
+                "icon": "$(extensions-view-icon)"
             }
         ],
+        "menus": {
+            "editor/context": [
+                {
+                    "command": "cCallHierarchy.showIncludeHierarchy",
+                    "group": "1_modification",
+                    "when": "enableCommands"
+                }
+            ]
+        },
         "configuration": [
             {
                 "title": "C Call Hierarchy",
