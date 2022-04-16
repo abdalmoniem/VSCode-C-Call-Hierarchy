@@ -141,8 +141,8 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
             fileName,
             `@ ${position.line.toString()}`,
             document.uri,
-            new vscode.Range(new vscode.Position(position.line, match!.index), new vscode.Position(position.line, text.length)),
-            new vscode.Range(new vscode.Position(position.line, match!.index), new vscode.Position(position.line, text.length)),
+            new vscode.Range(new vscode.Position(position.line - 1, match!.index), new vscode.Position(position.line - 1, text.length)),
+            new vscode.Range(new vscode.Position(position.line - 1, match!.index), new vscode.Position(position.line - 1, text.length)),
             true
          );
       } else {
