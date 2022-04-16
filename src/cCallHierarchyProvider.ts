@@ -139,10 +139,10 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
          item = new CCallHierarchyItem(
             vscode.SymbolKind.File,
             fileName,
-            `@ ${position.line.toString()}`,
+            `@ ${(position.line + 1).toString()}`,
             document.uri,
-            new vscode.Range(new vscode.Position(position.line - 1, match!.index), new vscode.Position(position.line - 1, text.length)),
-            new vscode.Range(new vscode.Position(position.line - 1, match!.index), new vscode.Position(position.line - 1, text.length)),
+            new vscode.Range(new vscode.Position(position.line, match!.index), new vscode.Position(position.line, text.length)),
+            new vscode.Range(new vscode.Position(position.line, match!.index), new vscode.Position(position.line, text.length)),
             true
          );
       } else {
