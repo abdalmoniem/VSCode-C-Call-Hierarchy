@@ -20,6 +20,12 @@ let outputChannel: vscode.OutputChannel;
 let statusbarItem: vscode.StatusBarItem;
 let extensionContext: vscode.ExtensionContext;
 
+enum FormatterStatus {
+	RECHECK = "sync",
+	ERROR = "alert",
+	DISABLED = "circle-slash"
+}
+
 export async function activate(context: vscode.ExtensionContext) {
 	extensionContext = context;
 
@@ -49,10 +55,6 @@ export async function resolveDependencies(): Promise<boolean> {
 			callHierarchyProvider.setREADTAGS_PATH(`${process.env.USERPROFILE!}/c-call-hierarchy/ctags/readtags.exe`);
 
 			dependenciesFound = true;
-
-			await initializeSubscriptions();
-
-			updateStatusbar(false);
 		}
 	}
 
@@ -60,10 +62,6 @@ export async function resolveDependencies(): Promise<boolean> {
 		(await lookpath(callHierarchyProvider.getCTAGS_PATH())) &&
 		(await lookpath(callHierarchyProvider.getREADTAGS_PATH()))) {
 		dependenciesFound = true;
-
-		await initializeSubscriptions();
-
-		updateStatusbar(false);
 	}
 
 	if (!dependenciesFound) {
@@ -78,27 +76,31 @@ export async function resolveDependencies(): Promise<boolean> {
 				if (await vscode.window.showInformationMessage(
 					'Please use your native package manager to install cscope & universal-ctags', 'copy dependencies', 'dismiss') === 'copy dependencies') {
 					await vscode.env.clipboard.writeText('install cscope universal-ctags');
-				}
 
-				updateStatusbar(true);
+					updateStatusbar(true, FormatterStatus.RECHECK);
+				} else {
+					updateStatusbar(true, FormatterStatus.ERROR);
+				}
 			}
 		} else {
 			// callHierarchyProvider.showMessageWindow('Extension deactivated, dependencies not found!!!', callHierarchyProvider.LogLevel.ERROR);
 
-			updateStatusbar(true);
+			updateStatusbar(true, FormatterStatus.DISABLED);
 		}
 	} else {
 		await initializeSubscriptions();
+
+		updateStatusbar(false);
 	}
 
 	return dependenciesFound;
 }
 
-export function updateStatusbar(show: boolean): void {
+export function updateStatusbar(show: boolean, status?: FormatterStatus): void {
 	if (show) {
 		statusbarItem.color = '#ff0000';
 		statusbarItem.command = 'cCallHierarchy.resolveDependencies';
-		statusbarItem.text = '🛇 Install CSCOPE & CTAGS';
+		statusbarItem.text = `${status === undefined ? '!' : `$(${status.toString()})`} Install CSCOPE & CTAGS`;
 		statusbarItem.tooltip = 'Install CSCOPE & CTAGS utilities';
 		statusbarItem.accessibilityInformation = { label: 'Install CSCOPE & CTAGS utilities' };
 		statusbarItem.show();
@@ -108,15 +110,18 @@ export function updateStatusbar(show: boolean): void {
 }
 
 export async function initializeSubscriptions() {
-	let cCallHierarchyProvider = new callHierarchyProvider.CCallHierarchyProvider();
 	await vscode.commands.executeCommand('setContext', 'enableCommands', true);
+	const cCallHierarchyProvider = new callHierarchyProvider.CCallHierarchyProvider();
+	const commands = await vscode.commands.getCommands(true);
 
 	extensionContext.subscriptions.push(
-		!(await vscode.commands.getCommands(true)).includes('cCallHierarchy.build') ?
-			vscode.commands.registerCommand('cCallHierarchy.build', async () => await callHierarchyProvider.buildDatabase(callHierarchyProvider.DatabaseType.BOTH)) :
+		!commands.includes('cCallHierarchy.build') ?
+			vscode.commands.registerCommand('cCallHierarchy.build',
+				async () => await callHierarchyProvider.buildDatabase(callHierarchyProvider.DatabaseType.BOTH)) :
 			new vscode.Disposable(() => undefined),
-		!(await vscode.commands.getCommands(true)).includes('cCallHierarchy.showIncludeHierarchy') ?
-			vscode.commands.registerCommand('cCallHierarchy.showIncludeHierarchy', async () => await callHierarchyProvider.showHierarchy(cCallHierarchyProvider)) :
+		!commands.includes('cCallHierarchy.showIncludeHierarchy') ?
+			vscode.commands.registerCommand('cCallHierarchy.showIncludeHierarchy',
+				async () => await vscode.commands.executeCommand('references-view.showCallHierarchy')) :
 			new vscode.Disposable(() => undefined),
 		vscode.languages.registerCallHierarchyProvider(
 			{
@@ -147,9 +152,9 @@ export async function installCSCOPE_CTAGS() {
 		console.info(`Directory "${path.resolve(process.env.USERPROFILE!)}/c-call-hierarchy" exists, skipping creation!`);
 	}
 
-	let cscopeDownloadPath = await download('https://github.com/abdalmoniem/VSCode-C-Call-Hierarchy/releases/download/v1.7.4/cscope.zip', `${process.env.USERPROFILE}/c-call-hierarchy/cscope.zip`);
+	const cscopeDownloadPath = await download('https://github.com/abdalmoniem/VSCode-C-Call-Hierarchy/releases/download/v1.7.4/cscope.zip', `${process.env.USERPROFILE}/c-call-hierarchy/cscope.zip`);
 
-	let ctagsDownloadPath = await download('https://github.com/abdalmoniem/VSCode-C-Call-Hierarchy/releases/download/v1.7.4/ctags.zip', `${process.env.USERPROFILE}/c-call-hierarchy/ctags.zip`);
+	const ctagsDownloadPath = await download('https://github.com/abdalmoniem/VSCode-C-Call-Hierarchy/releases/download/v1.7.4/ctags.zip', `${process.env.USERPROFILE}/c-call-hierarchy/ctags.zip`);
 
 	const cscopeZipFile = new zip(cscopeDownloadPath);
 	outputChannel.appendLine(`extracting ${cscopeDownloadPath}...\n`);
@@ -180,16 +185,12 @@ export async function download(url: string, downloadPath: string): Promise<strin
 
 	return new Promise((resolve, reject) => {
 		https.get(url, response => {
-			const statusCode = response.statusCode;
-
-			// console.log(response.headers.location);
-
-			if (statusCode === 302) {
+			if (response.statusCode === 302) {
 				outputChannel.appendLine(`${url} redirected to ${response.headers.location!}\n`);
 				resolve(download(response.headers.location!, downloadPath));
 			} else {
-				if (statusCode !== 200) {
-					return reject(`Download Error: ${statusCode}`);
+				if (response.statusCode !== 200) {
+					return reject(`Download Error: ${response.statusCode}`);
 				}
 
 				const writeStream = fs.createWriteStream(downloadPath);

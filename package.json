@@ -3,7 +3,7 @@
     "publisher": "AbdAlMoniem-AlHifnawy",
     "displayName": "C Call Hierarchy",
     "description": "Build C Call Hierarchy using cscope",
-    "version": "2.0.6",
+    "version": "2.0.8",
     "engines": {
         "vscode": "^1.52.0"
     },
@@ -40,21 +40,21 @@
             {
                 "command": "cCallHierarchy.build",
                 "category": "C Call Hierarchy",
-                "enablement": "enableCommands",
+                "enablement": "resourceLangId == c || resourceLangId == cpp && editorTextFocus && enableCommands",
                 "title": "Build Database",
                 "icon": "$(extensions-view-icon)"
             },
             {
                 "command": "cCallHierarchy.resolveDependencies",
                 "category": "C Call Hierarchy",
-                "enablement": "enableCommands",
+                "enablement": "resourceLangId == c || resourceLangId == cpp && editorTextFocus && enableCommands",
                 "title": "Resolve Dependencies",
                 "icon": "$(extensions-view-icon)"
             },
             {
                 "command": "cCallHierarchy.showIncludeHierarchy",
                 "category": "C Call Hierarchy",
-                "enablement": "enableCommands",
+                "enablement": "resourceLangId == c || resourceLangId == cpp && editorTextFocus && enableCommands",
                 "title": "Show Include Hierarchy",
                 "icon": "$(extensions-view-icon)"
             }

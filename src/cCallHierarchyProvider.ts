@@ -98,11 +98,8 @@ export class CCallHierarchyItem extends vscode.CallHierarchyItem {
 export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
    private readonly cwd: string;
 
-   public showIncludeHierarchy: boolean;
-
    constructor() {
       this.cwd = getWorkspaceRootPath();
-      this.showIncludeHierarchy = false;
    }
 
    async prepareCallHierarchy(
@@ -403,11 +400,6 @@ export async function findCallees(funcName: string): Promise<Array<SymbolInfo>> 
    }
 
    return callees;
-}
-
-export async function showHierarchy(provider: CCallHierarchyProvider): Promise<void> {
-   // provider.showIncludeHierarchy = true;
-   await vscode.commands.executeCommand('references-view.showCallHierarchy');
 }
 
 export async function getSymbolKind(symbolName: string): Promise<vscode.SymbolKind> {
