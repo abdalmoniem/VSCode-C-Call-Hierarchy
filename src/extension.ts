@@ -30,7 +30,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(vscode.commands.registerCommand('cCallHierarchy.resolveDependencies', async () => await resolveDependencies()));
 
 	if (await resolveDependencies()) {
-		initializeSubscriptions();
+		await initializeSubscriptions();
 	}
 	outputChannel.appendLine('C Call Hierarchy activated!');
 }
@@ -88,7 +88,7 @@ export async function resolveDependencies(): Promise<boolean> {
 			updateStatusbar(true);
 		}
 	} else {
-		await resolveDependencies();
+		await initializeSubscriptions();
 	}
 
 	return dependenciesFound;
@@ -109,7 +109,7 @@ export function updateStatusbar(show: boolean): void {
 
 export async function initializeSubscriptions() {
 	let cCallHierarchyProvider = new callHierarchyProvider.CCallHierarchyProvider();
-	vscode.commands.executeCommand('setContext', 'enableCommands', true);
+	await vscode.commands.executeCommand('setContext', 'enableCommands', true);
 
 	extensionContext.subscriptions.push(
 		!(await vscode.commands.getCommands(true)).includes('cCallHierarchy.build') ?
