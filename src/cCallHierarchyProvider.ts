@@ -6,6 +6,26 @@ let CSCOPE_PATH = 'cscope';
 let CTAGS_PATH = 'ctags';
 let READTAGS_PATH = 'readtags';
 
+const symbols: Record<string, vscode.SymbolKind> = {
+   'd': vscode.SymbolKind.Constant,
+   'e': vscode.SymbolKind.Enum,
+   'f': vscode.SymbolKind.Function,
+   'g': vscode.SymbolKind.EnumMember,
+   'h': vscode.SymbolKind.File,
+   'l': vscode.SymbolKind.Variable,
+   'm': vscode.SymbolKind.Field,
+   'p': vscode.SymbolKind.Function,
+   's': vscode.SymbolKind.Struct,
+   't': vscode.SymbolKind.Class,
+   'u': vscode.SymbolKind.Struct,
+   'v': vscode.SymbolKind.Variable,
+   'x': vscode.SymbolKind.Variable,
+   'z': vscode.SymbolKind.TypeParameter,
+   'L': vscode.SymbolKind.Namespace,
+   'D': vscode.SymbolKind.TypeParameter,
+
+};
+
 export function getCSCOPE_PATH(): string {
    return CSCOPE_PATH;
 }
@@ -332,7 +352,7 @@ export async function buildDatabase(buildOption: DatabaseType): Promise<void> {
 
          await doCLI(`${CSCOPE_PATH} -Rcbkf cscope.out`);
 
-         await delay(500);
+         await delayMs(500);
       }
 
       if ((buildOption === DatabaseType.CTAGS) || (buildOption === DatabaseType.BOTH)) {
@@ -342,13 +362,13 @@ export async function buildDatabase(buildOption: DatabaseType): Promise<void> {
 
          await doCLI(`${CTAGS_PATH} --fields=+i -Rno ctags.out`);
 
-         await delay(500);
+         await delayMs(500);
       }
       progress.report({ increment: 100, message: "Finished building database" });
 
       // showMessageWindow('Finished building database');
 
-      await delay(1500);
+      await delayMs(1500);
    });
 }
 
@@ -415,59 +435,7 @@ export async function getSymbolKind(symbolName: string): Promise<vscode.SymbolKi
       let fields = line.split(/\s+/);
 
       if (fields.length >= 4) {
-         switch (fields[3]) {
-            case 'd':
-               kind = vscode.SymbolKind.Constant;
-               break;
-            case 'e':
-               kind = vscode.SymbolKind.Enum;
-               break;
-            case 'f':
-               kind = vscode.SymbolKind.Function;
-               break;
-            case 'g':
-               kind = vscode.SymbolKind.EnumMember;
-               break;
-            case 'h':
-               kind = vscode.SymbolKind.File;
-               break;
-            case 'l':
-               kind = vscode.SymbolKind.Variable;
-               break;
-            case 'm':
-               kind = vscode.SymbolKind.Field;
-               break;
-            case 'p':
-               kind = vscode.SymbolKind.Function;
-               break;
-            case 's':
-               kind = vscode.SymbolKind.Struct;
-               break;
-            case 't':
-               kind = vscode.SymbolKind.Class;
-               break;
-            case 'u':
-               kind = vscode.SymbolKind.Struct;
-               break;
-            case 'v':
-               kind = vscode.SymbolKind.Variable;
-               break;
-            case 'x':
-               kind = vscode.SymbolKind.Variable;
-               break;
-            case 'z':
-               kind = vscode.SymbolKind.TypeParameter;
-               break;
-            case 'L':
-               kind = vscode.SymbolKind.Namespace;
-               break;
-            case 'D':
-               kind = vscode.SymbolKind.TypeParameter;
-               break;
-            default:
-               kind = vscode.SymbolKind.Class;
-               break;
-         }
+         kind = (fields[3] in symbols) ? symbols[fields[3]] : vscode.SymbolKind.Class;
       }
    }
 
@@ -480,7 +448,10 @@ export async function doCLI(command: string): Promise<string> {
    return new Promise((resolve, reject) => {
       childProcess.exec(
          command,
-         { cwd: dir },
+         {
+            cwd: dir,
+            maxBuffer: 1024 * 1024 * 1024 * 1024 * 10
+         },
          async (error: childProcess.ExecException | null, stdout: string, stderr: string) => {
             if (error) {
                // showMessageWindow(stderr, LogLevel.ERROR);
@@ -517,6 +488,6 @@ export function showMessageWindow(msg: string, logLevl: LogLevel = LogLevel.INFO
    }
 }
 
-async function delay(ms: number): Promise<undefined> {
+async function delayMs(ms: number): Promise<undefined> {
    return new Promise<undefined>(resolve => setTimeout(resolve, ms));
 }

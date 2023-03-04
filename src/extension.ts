@@ -16,6 +16,9 @@ import * as vscode from 'vscode';
 import { lookpath } from 'lookpath';
 import * as callHierarchyProvider from './cCallHierarchyProvider';
 
+const CSCOPE_DOWNLOAD_URL: string = 'https://github.com/abdalmoniem/VSCode-C-Call-Hierarchy/releases/download/v1.7.4/cscope.zip';
+const CTAGS_DOWNLOAD_URL: string = 'https://github.com/abdalmoniem/VSCode-C-Call-Hierarchy/releases/download/v1.7.4/ctags.zip';
+
 let outputChannel: vscode.OutputChannel;
 let statusbarItem: vscode.StatusBarItem;
 let extensionContext: vscode.ExtensionContext;
@@ -26,7 +29,7 @@ enum FormatterStatus {
 	DISABLED = "circle-slash"
 }
 
-export async function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
 	extensionContext = context;
 
 	outputChannel = vscode.window.createOutputChannel("C Call Hierarchy");
@@ -41,7 +44,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	outputChannel.appendLine('C Call Hierarchy activated!');
 }
 
-export function deactivate() { }
+export function deactivate(): void { }
 
 export async function resolveDependencies(): Promise<boolean> {
 	let dependenciesFound = false;
@@ -109,7 +112,7 @@ export function updateStatusbar(show: boolean, status?: FormatterStatus): void {
 	}
 }
 
-export async function initializeSubscriptions() {
+export async function initializeSubscriptions(): Promise<void> {
 	await vscode.commands.executeCommand('setContext', 'enableCommands', true);
 	const cCallHierarchyProvider = new callHierarchyProvider.CCallHierarchyProvider();
 	const commands = await vscode.commands.getCommands(true);
@@ -140,7 +143,7 @@ export async function initializeSubscriptions() {
 	);
 }
 
-export async function installCSCOPE_CTAGS() {
+export async function installCSCOPE_CTAGS(): Promise<void> {
 	if (!fs.existsSync(`${process.env.USERPROFILE!}/c-call-hierarchy`)) {
 		fs.mkdir(path.resolve(`${process.env.USERPROFILE!}/c-call-hierarchy`), (err) => {
 			if (err) {
@@ -152,27 +155,41 @@ export async function installCSCOPE_CTAGS() {
 		console.info(`Directory "${path.resolve(process.env.USERPROFILE!)}/c-call-hierarchy" exists, skipping creation!`);
 	}
 
-	const cscopeDownloadPath = await download('https://github.com/abdalmoniem/VSCode-C-Call-Hierarchy/releases/download/v1.7.4/cscope.zip', `${process.env.USERPROFILE}/c-call-hierarchy/cscope.zip`);
+	const cscopeDownloadPath = await download(CSCOPE_DOWNLOAD_URL, `${process.env.USERPROFILE}/c-call-hierarchy/cscope.zip`);
 
-	const ctagsDownloadPath = await download('https://github.com/abdalmoniem/VSCode-C-Call-Hierarchy/releases/download/v1.7.4/ctags.zip', `${process.env.USERPROFILE}/c-call-hierarchy/ctags.zip`);
+	const ctagsDownloadPath = await download(CTAGS_DOWNLOAD_URL, `${process.env.USERPROFILE}/c-call-hierarchy/ctags.zip`);
 
 	const cscopeZipFile = new zip(cscopeDownloadPath);
 	outputChannel.appendLine(`extracting ${cscopeDownloadPath}...\n`);
-	cscopeZipFile.extractAllTo(path.dirname(cscopeDownloadPath), true, true);
-	// outputChannel.appendLine(`extracted ${cscopeDownloadPath} to ${path.resolve(path.dirname(cscopeDownloadPath))}\n`);
+	cscopeZipFile.extractAllToAsync(path.dirname(cscopeDownloadPath), true, true, error => {
+		if (error) {
+			outputChannel.appendLine(`extracting ${cscopeDownloadPath} to ${path.resolve(path.dirname(cscopeDownloadPath))} failed.\n`);
+			outputChannel.appendLine(`ERROR: ${error.message}`);
+		} else {
+			outputChannel.appendLine(`extracted ${cscopeDownloadPath} to ${path.resolve(path.dirname(cscopeDownloadPath))}\n`);
+		}
+	});
 
 	const ctagsZipFile = new zip(ctagsDownloadPath);
 	outputChannel.appendLine(`extracting ${ctagsDownloadPath}...\n`);
-	ctagsZipFile.extractAllTo(path.dirname(ctagsDownloadPath), true, true);
-	// outputChannel.appendLine(`extracted ${ctagsDownloadPath} to ${path.resolve(path.dirname(ctagsDownloadPath))}\n`);
+	ctagsZipFile.extractAllToAsync(path.dirname(ctagsDownloadPath), true, true, error => {
+		if (error) {
+			outputChannel.appendLine(`extracting ${ctagsDownloadPath} to ${path.resolve(path.dirname(ctagsDownloadPath))} failed.\n`);
+			outputChannel.appendLine(`ERROR: ${error.message}`);
+		} else {
+			outputChannel.appendLine(`extracted ${ctagsDownloadPath} to ${path.resolve(path.dirname(ctagsDownloadPath))}\n`);
+		}
+	});
 
 	outputChannel.appendLine(`removing ${cscopeDownloadPath}...\n`);
-	fs.unlinkSync(cscopeDownloadPath);
-	// outputChannel.appendLine(`removed ${cscopeDownloadPath}\n`);
+	fs.unlink(cscopeDownloadPath, () => {
+		outputChannel.appendLine(`removed ${cscopeDownloadPath}\n`);
+	});
 
 	outputChannel.appendLine(`removing ${ctagsDownloadPath}...\n`);
-	fs.unlinkSync(ctagsDownloadPath);
-	// outputChannel.appendLine(`removed ${ctagsDownloadPath}\n`);
+	fs.unlink(ctagsDownloadPath, () => {
+		outputChannel.appendLine(`removed ${ctagsDownloadPath}\n`);
+	});
 
 	callHierarchyProvider.setCSCOPE_PATH(path.resolve(`${process.env.USERPROFILE!}/c-call-hierarchy/cscope/cscope.exe`));
 	callHierarchyProvider.setCTAGS_PATH(path.resolve(`${process.env.USERPROFILE!}/c-call-hierarchy/ctags/ctags.exe`));
