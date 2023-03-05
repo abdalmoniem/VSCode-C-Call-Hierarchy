@@ -7,7 +7,7 @@ let CTAGS_PATH = 'ctags';
 let READTAGS_PATH = 'readtags';
 
 const symbols: Record<string, vscode.SymbolKind> = {
-   'd': vscode.SymbolKind.Constant,
+   'd': vscode.SymbolKind.String,
    'e': vscode.SymbolKind.Enum,
    'f': vscode.SymbolKind.Function,
    'g': vscode.SymbolKind.EnumMember,
@@ -129,12 +129,13 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
       let buildOption = 0;
       let infoMessage = '';
 
-      if (!fs.existsSync(`${this.cwd}/cscope.out`)) {
+      const { cscopesDbPath, ctagsDbPath } = getDatabasePath();
+      if (!fs.existsSync(cscopesDbPath)) {
          infoMessage += `cscope database doesn't exist, rebuilding...\n`;
          buildOption |= 1 << 0;
       }
 
-      if (!fs.existsSync(`${this.cwd}/ctags.out`)) {
+      if (!fs.existsSync(ctagsDbPath)) {
          infoMessage += `ctags database doesn't exist, rebuilding...`;
          buildOption |= 1 << 1;
       }
@@ -242,10 +243,12 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
    async provideCallHierarchyOutgoingCalls(
       item: CCallHierarchyItem,
       token: vscode.CancellationToken): Promise<vscode.CallHierarchyOutgoingCall[]> {
+      const { cscopesDbPath } = getDatabasePath();
+
       let outgoingCalls: Array<vscode.CallHierarchyOutgoingCall> = new Array();
 
       if (item.isIncludeItem) {
-         const filePath = (await doCLI(`${CSCOPE_PATH} -d -f cscope.out -L7 ${item.name}`)).split(/\s+/)[0];
+         const filePath = (await doCLI(`${CSCOPE_PATH} -d -f ${cscopesDbPath} -L7 ${item.name}`)).split(/\s+/)[0];
          const document = await vscode.workspace.openTextDocument(`${this.cwd}/${filePath}`);
 
          for (let lineNumber = 0; lineNumber < document.lineCount; lineNumber++) {
@@ -294,9 +297,10 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
    }
 
    private async getSymbolInfo(symbol: SymbolInfo, relative: string, range?: vscode.Range): Promise<{ description: string; filePath: vscode.Uri; symbolRange: vscode.Range; }> {
-      let config = vscode.workspace.getConfiguration('ccallhierarchy');
-      let canShowFileNames = config.get('showFileNamesInSearchResults');
-      let clickJumpLocation = config.get('clickJumpLocation');
+      const config = vscode.workspace.getConfiguration('ccallhierarchy');
+      const canShowFileNames = config.get('showFileNamesInSearchResults');
+      const clickJumpLocation = config.get('clickJumpLocation');
+      const { cscopesDbPath } = getDatabasePath();
 
       let symbolRange = range ?? await this.getWordRange(`${this.cwd}/${symbol.filePath}`, symbol.linePosition - 1, relative);
 
@@ -305,7 +309,7 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
       let description = `${canShowFileNames ? symbol.getFileName() : ''} @ ${symbol.linePosition.toString()}`;
 
       if (clickJumpLocation === ClickJumpLocation.SymbolDefinition) {
-         let definition = await doCLI(`${CSCOPE_PATH} -d -f cscope.out -L1 ${relative}`);
+         let definition = await doCLI(`${CSCOPE_PATH} -d -f ${cscopesDbPath} -L1 ${relative}`);
 
          if (definition.length > 0) {
             let funcInfo = SymbolInfo.convertToFuncInfo(definition as string);
@@ -334,6 +338,16 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
    }
 }
 
+export function getDatabasePath() {
+   const config = vscode.workspace.getConfiguration('ccallhierarchy');
+   const databasePath = `${getWorkspaceRootPath()}/${config.get('databasePath')}`;
+
+   return {
+      cscopesDbPath: `${databasePath}/cscope.out`,
+      ctagsDbPath: `${databasePath}/ctags.out`
+   };
+}
+
 export async function buildDatabase(buildOption: DatabaseType): Promise<void> {
    await vscode.window.withProgress({
       location: vscode.ProgressLocation.Notification,
@@ -345,12 +359,14 @@ export async function buildDatabase(buildOption: DatabaseType): Promise<void> {
       // 	console.log("User canceled the long running operation");
       // });
 
+      const { cscopesDbPath, ctagsDbPath } = getDatabasePath();
+
       if ((buildOption === DatabaseType.CSCOPE) || (buildOption === DatabaseType.BOTH)) {
          progress.report({ increment: 0, message: "Building Database..." });
 
          // showMessageWindow('Building cscope Database...');
 
-         await doCLI(`${CSCOPE_PATH} -Rcbkf cscope.out`);
+         await doCLI(`${CSCOPE_PATH} -Rcbkf ${cscopesDbPath}`);
 
          await delayMs(500);
       }
@@ -360,7 +376,7 @@ export async function buildDatabase(buildOption: DatabaseType): Promise<void> {
 
          // showMessageWindow('Building ctags Database...');
 
-         await doCLI(`${CTAGS_PATH} --fields=+i -Rno ctags.out`);
+         await doCLI(`${CTAGS_PATH} --fields=+i -Rno ${ctagsDbPath}`);
 
          await delayMs(500);
       }
@@ -373,9 +389,11 @@ export async function buildDatabase(buildOption: DatabaseType): Promise<void> {
 }
 
 export async function findIncluders(fileName: string): Promise<Array<SymbolInfo>> {
+   const { cscopesDbPath } = getDatabasePath();
+
    let includers: Array<SymbolInfo> = new Array();
 
-   let data: string = await doCLI(`${CSCOPE_PATH} -d -f cscope.out -L8 ${fileName}`) as string;
+   let data: string = await doCLI(`${CSCOPE_PATH} -d -f ${cscopesDbPath} -L8 ${fileName}`) as string;
 
    let lines = data.split('\n');
 
@@ -389,9 +407,11 @@ export async function findIncluders(fileName: string): Promise<Array<SymbolInfo>
 }
 
 export async function findCallers(funcName: string): Promise<Array<SymbolInfo>> {
+   const { cscopesDbPath } = getDatabasePath();
+
    let callers: Array<SymbolInfo> = new Array();
 
-   let data: string = await doCLI(`${CSCOPE_PATH} -d -f cscope.out -L3 ${funcName}`) as string;
+   let data: string = await doCLI(`${CSCOPE_PATH} -d -f ${cscopesDbPath} -L3 ${funcName}`) as string;
 
    let lines = data.split('\n');
 
@@ -406,9 +426,11 @@ export async function findCallers(funcName: string): Promise<Array<SymbolInfo>> 
 }
 
 export async function findCallees(funcName: string): Promise<Array<SymbolInfo>> {
+   const { cscopesDbPath } = getDatabasePath();
+
    let callees: Array<SymbolInfo> = new Array();
 
-   let data: string = await doCLI(`${CSCOPE_PATH} -d -f cscope.out -L2 ${funcName}`) as string;
+   let data: string = await doCLI(`${CSCOPE_PATH} -d -f ${cscopesDbPath} -L2 ${funcName}`) as string;
 
    let lines = data.split('\n');
 
@@ -423,19 +445,34 @@ export async function findCallees(funcName: string): Promise<Array<SymbolInfo>> 
 }
 
 export async function getSymbolKind(symbolName: string): Promise<vscode.SymbolKind> {
+   const { ctagsDbPath } = getDatabasePath();
+
    let data = process.platform === 'win32' ?
-      await doCLI(`${READTAGS_PATH} -t ctags.out -F "(list $name \\" \\" $input \\" \\" $line \\" \\" $kind #t)" ${symbolName}`) :
-      await doCLI(`${READTAGS_PATH} -t ctags.out -F '(list $name " " $input " " $line " " $kind #t)' ${symbolName}`);
+      await doCLI(`${READTAGS_PATH} -t ${ctagsDbPath} -F "(list $name \\" \\" $input \\" \\" $line \\" \\" $kind #t)" ${symbolName}`) :
+      await doCLI(`${READTAGS_PATH} -t ${ctagsDbPath} -F '(list $name " " $input " " $line " " $kind #t)' ${symbolName}`);
 
    let lines = data.split(/\n/);
 
-   let kind: vscode.SymbolKind = vscode.SymbolKind.Constant;
+   let kind: vscode.SymbolKind = vscode.SymbolKind.Null;
 
    for (let line of lines) {
       let fields = line.split(/\s+/);
 
       if (fields.length >= 4) {
-         kind = (fields[3] in symbols) ? symbols[fields[3]] : vscode.SymbolKind.Class;
+         if (fields[3] === 'd') {
+            const docLines = (await vscode.workspace.openTextDocument(`${getWorkspaceRootPath()}/${fields[1]}`)).getText().split(/\n/gi);
+            const definition = docLines[Number(fields[2]) - 1];
+            const regex = new RegExp(`#define\\s*${fields[0]}\\s*\\(`, 'gi');
+
+            if (regex.test(definition)) { // this is a macro
+               kind = vscode.SymbolKind.Field;
+            } else {
+               kind = (fields[3] in symbols) ? symbols[fields[3]] : vscode.SymbolKind.Null;
+            }
+
+         } else {
+            kind = (fields[3] in symbols) ? symbols[fields[3]] : vscode.SymbolKind.Null;
+         }
       }
    }
 
@@ -468,8 +505,8 @@ export function getWorkspaceRootPath(): string {
 }
 
 export function showMessageWindow(msg: string, logLevl: LogLevel = LogLevel.INFO): void {
-   let config = vscode.workspace.getConfiguration('ccallhierarchy');
-   let canShowMessages = config.get('showMessages');
+   const config = vscode.workspace.getConfiguration('ccallhierarchy');
+   const canShowMessages = config.get('showMessages');
 
    if (canShowMessages) {
       switch (logLevl) {
