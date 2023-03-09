@@ -15,6 +15,15 @@
 				"kind": "build",
 				"isDefault": true
 			}
+		},
+		{
+			"label": "Clean Packages",
+			"type": "shell",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"command":"rm *.vsix",
+			"group": "none"
 		}
 	]
 }
