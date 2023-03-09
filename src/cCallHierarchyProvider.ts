@@ -342,6 +342,10 @@ export function getDatabasePath() {
    const config = vscode.workspace.getConfiguration('ccallhierarchy');
    const databasePath = `${getWorkspaceRootPath()}/${config.get('databasePath')}`;
 
+   if (!fs.existsSync(databasePath)) {
+      fs.mkdirSync(databasePath, { recursive: true });
+   }
+   
    return {
       cscopesDbPath: `${databasePath}/cscope.out`,
       ctagsDbPath: `${databasePath}/ctags.out`
