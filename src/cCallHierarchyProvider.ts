@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as vscode from 'vscode';
 import * as childProcess from 'child_process';
+import * as lodash from 'lodash';
 
 let CSCOPE_PATH = 'cscope';
 let CTAGS_PATH = 'ctags';
@@ -99,6 +100,8 @@ export class SymbolInfo {
 
       return folders.slice(-1)[0];
    }
+
+   public toString = () => `SymbolInfo(${this.name}, ${this.description}, ${this.filePath}, ${this.linePosition})`;
 }
 
 export class CCallHierarchyItem extends vscode.CallHierarchyItem {
@@ -345,7 +348,7 @@ export function getDatabasePath() {
    if (!fs.existsSync(databasePath)) {
       fs.mkdirSync(databasePath, { recursive: true });
    }
-   
+
    return {
       cscopesDbPath: `${databasePath}/cscope.out`,
       ctagsDbPath: `${databasePath}/ctags.out`
@@ -410,23 +413,19 @@ export async function findIncluders(fileName: string): Promise<Array<SymbolInfo>
    return includers;
 }
 
-export async function findCallers(funcName: string): Promise<Array<SymbolInfo>> {
+export async function findCallers(funcName: string) {
    const { cscopesDbPath } = getDatabasePath();
-
-   let callers: Array<SymbolInfo> = new Array();
 
    let data: string = await doCLI(`${CSCOPE_PATH} -d -f ${cscopesDbPath} -L3 ${funcName}`) as string;
 
    let lines = data.split('\n');
 
-   for (let line of lines) {
-      if (line.length > 0) {
-         let funcInfo = SymbolInfo.convertToFuncInfo(line);
-         callers.push(funcInfo);
-      }
-   }
-
-   return callers;
+   return lodash.chain(lines)
+      .filter((value: string) => (value.length > 0))
+      .flatMap((value: string) => SymbolInfo.convertToFuncInfo(value))
+      .groupBy(x => x.linePosition)
+      .map(group => (group as Array<SymbolInfo>).slice(-1)[0])
+      .value();
 }
 
 export async function findCallees(funcName: string): Promise<Array<SymbolInfo>> {
@@ -438,14 +437,19 @@ export async function findCallees(funcName: string): Promise<Array<SymbolInfo>> 
 
    let lines = data.split('\n');
 
-   for (let line of lines) {
-      if (line.length > 0) {
-         let funcInfo = SymbolInfo.convertToFuncInfo(line);
-         callees.push(funcInfo);
-      }
-   }
+   // for (let line of lines) {
+   //    if (line.length > 0) {
+   //       let funcInfo = SymbolInfo.convertToFuncInfo(line);
+   //       callees.push(funcInfo);
+   //    }z
+   // }
 
-   return callees;
+   return lodash.chain(lines)
+      .filter((value: string) => (value.length > 0))
+      .flatMap((value: string) => SymbolInfo.convertToFuncInfo(value))
+      .groupBy(x => x.linePosition)
+      .map(group => (group as Array<SymbolInfo>).slice(-1)[0])
+      .value();;
 }
 
 export async function getSymbolKind(symbolName: string): Promise<vscode.SymbolKind> {
