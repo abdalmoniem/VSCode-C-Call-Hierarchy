@@ -15,5 +15,6 @@
         "ctags",
         "lookpath",
         "readtags"
-    ]
+    ],
+    "cmake.configureOnOpen": false
 }

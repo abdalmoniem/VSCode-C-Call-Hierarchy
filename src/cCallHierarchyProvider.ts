@@ -373,7 +373,7 @@ export async function buildDatabase(buildOption: DatabaseType): Promise<void> {
 
          // showMessageWindow('Building cscope Database...');
 
-         await doCLI(`${CSCOPE_PATH} -Rcbkf ${cscopesDbPath}`);
+         await doCLI(`${CSCOPE_PATH} -Rcbkf "${cscopesDbPath}"`);
 
          await delayMs(500);
       }
@@ -383,7 +383,7 @@ export async function buildDatabase(buildOption: DatabaseType): Promise<void> {
 
          // showMessageWindow('Building ctags Database...');
 
-         await doCLI(`${CTAGS_PATH} --fields=+i -Rno ${ctagsDbPath}`);
+         await doCLI(`${CTAGS_PATH} --fields=+i -Rno "${ctagsDbPath}"`);
 
          await delayMs(500);
       }
