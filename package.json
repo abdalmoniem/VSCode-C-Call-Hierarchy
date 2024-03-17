@@ -38,6 +38,13 @@
     "contributes": {
         "commands": [
             {
+                "command": "cCallHierarchy.startIndexing",
+                "category": "C Call Hierarchy",
+                "enablement": "resourceLangId == c || resourceLangId == cpp && editorTextFocus && enableCommands",
+                "title": "Start Indexing",
+                "icon": "$(sync)"
+            },
+            {
                 "command": "cCallHierarchy.build",
                 "category": "C Call Hierarchy",
                 "enablement": "resourceLangId == c || resourceLangId == cpp && editorTextFocus && enableCommands",
@@ -126,7 +133,7 @@
         "@typescript-eslint/parser": "^4.9.0",
         "eslint": "^7.15.0",
         "glob": "^7.1.6",
-        "mocha": "^8.1.3",
+        "mocha": "^10.3.0",
         "typescript": "^4.1.2",
         "vscode-test": "^1.4.1"
     },
@@ -135,6 +142,6 @@
         "adm-zip": "^0.5.9",
         "lodash": "^4.17.21",
         "lookpath": "^1.2.2",
-        "vsce": "^2.7.0"
+        "vsce": "^2.15.0"
     }
 }
