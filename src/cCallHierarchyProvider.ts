@@ -203,23 +203,27 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
          let includers: Array<SymbolInfo> = await findIncluders(item.name);
 
          for (let includer of includers) {
-            let symbolRange = await this.getWordRange(`${this.cwd}/${includer.filePath}`, includer.linePosition - 1, item.name);
+            try {
+               let symbolRange = await this.getWordRange(`${this.cwd}/${includer.filePath}`, includer.linePosition - 1, item.name);
 
-            let filePath = vscode.Uri.file(`${this.cwd}/${includer.filePath}`);
+               let filePath = vscode.Uri.file(`${this.cwd}/${includer.filePath}`);
 
-            let description = `@ ${includer.linePosition.toString()}`;
+               let description = `@ ${includer.linePosition.toString()}`;
 
-            let fromCaller = new CCallHierarchyItem(
-               vscode.SymbolKind.File,
-               includer.name,
-               description,
-               filePath,
-               symbolRange,
-               symbolRange,
-               true
-            );
+               let fromCaller = new CCallHierarchyItem(
+                  vscode.SymbolKind.File,
+                  includer.name,
+                  description,
+                  filePath,
+                  symbolRange,
+                  symbolRange,
+                  true
+               );
 
-            incomingCalls.push(new vscode.CallHierarchyIncomingCall(fromCaller, [symbolRange]));
+               incomingCalls.push(new vscode.CallHierarchyIncomingCall(fromCaller, [symbolRange]));
+            } catch (ex) {
+               console.log(ex);
+            }
          }
       } else {
          let callers = await findCallers(item.name);
@@ -251,31 +255,37 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
       let outgoingCalls: Array<vscode.CallHierarchyOutgoingCall> = new Array();
 
       if (item.isIncludeItem) {
-         const filePath = (await doCLI(`${CSCOPE_PATH} -d -f ${cscopesDbPath} -L7 ${item.name}`)).split(/\s+/)[0];
-         const document = await vscode.workspace.openTextDocument(`${this.cwd}/${filePath}`);
+         (await doCLI(`${CSCOPE_PATH} -d -f "${cscopesDbPath}" -L7 ${item.name}`).then(async (output) => {
+            const filePath = output.split(/\s+/)[0];
 
-         for (let lineNumber = 0; lineNumber < document.lineCount; lineNumber++) {
-            const line = document.lineAt(lineNumber).text;
+            const document = await vscode.workspace.openTextDocument(`${this.cwd}/${filePath}`);
 
-            let regex = /#include\s*[<"]?(?<fileName>\w+.h)[">]?\s*/;
-            if (regex.test(line)) {
-               let match = regex.exec(line);
-               let fileName = match!.groups!.fileName;
-               let symbolRange = new vscode.Range(new vscode.Position(lineNumber, match!.index), new vscode.Position(lineNumber, line.length));
+            for (let lineNumber = 0; lineNumber < document.lineCount; lineNumber++) {
+               const line = document.lineAt(lineNumber).text;
 
-               let toCallee = new CCallHierarchyItem(
-                  vscode.SymbolKind.File,
-                  fileName,
-                  `@ ${lineNumber.toString()}`,
-                  document.uri,
-                  symbolRange,
-                  symbolRange,
-                  true
-               );
+               let regex = /#include\s*[<"]?(?<fileName>\w+.h)[">]?\s*/;
+               if (regex.test(line)) {
+                  let match = regex.exec(line);
+                  let fileName = match!.groups!.fileName;
+                  let symbolRange = new vscode.Range(new vscode.Position(lineNumber, match!.index), new vscode.Position(lineNumber, line.length));
 
-               outgoingCalls.push(new vscode.CallHierarchyOutgoingCall(toCallee, [symbolRange]));
+                  let toCallee = new CCallHierarchyItem(
+                     vscode.SymbolKind.File,
+                     fileName,
+                     `@ ${lineNumber.toString()}`,
+                     document.uri,
+                     symbolRange,
+                     symbolRange,
+                     true
+                  );
+
+                  outgoingCalls.push(new vscode.CallHierarchyOutgoingCall(toCallee, [symbolRange]));
+               }
             }
-         }
+         }).catch((reason) => {
+            console.log(reason);
+            showMessageWindow(String(reason), LogLevel.ERROR);
+         }));
       } else {
          let callees = await findCallees(item.name);
 
@@ -331,13 +341,18 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
       let document = await vscode.workspace.openTextDocument(filePath);
       let text = document.lineAt(linePosition);
 
-      let wordIndex = new RegExp(`\\b${word}\\b`, "i").exec(text.text)!.index;
+      const match = new RegExp(`#include\\s*(.*${word}.*)`, "i").exec(text.text);
+      if (match) {
+         let wordIndex = match.index;
 
-      let callerItemPositionStart = new vscode.Position(linePosition, wordIndex);
-      let callerItemPositionEnd = new vscode.Position(linePosition, wordIndex + word.length);
-      let callerItemRange = new vscode.Range(callerItemPositionStart, callerItemPositionEnd);
+         let callerItemPositionStart = new vscode.Position(linePosition, wordIndex);
+         let callerItemPositionEnd = new vscode.Position(linePosition, wordIndex + match[0].length);
+         let callerItemRange = new vscode.Range(callerItemPositionStart, callerItemPositionEnd);
 
-      return callerItemRange;
+         return callerItemRange;
+      } else {
+         return new vscode.Range(new vscode.Position(linePosition, 0), new vscode.Position(linePosition, 0));
+      }
    }
 }
 
@@ -398,19 +413,23 @@ export async function buildDatabase(buildOption: DatabaseType): Promise<void> {
 export async function findIncluders(fileName: string): Promise<Array<SymbolInfo>> {
    const { cscopesDbPath } = getDatabasePath();
 
-   let includers: Array<SymbolInfo> = new Array();
+   const ret = await doCLI(`${CSCOPE_PATH} -d -f "${cscopesDbPath}" -L8 ${fileName}`).then((data) => {
+      let includers: Array<SymbolInfo> = new Array();
+      let lines = data.split('\n');
 
-   let data: string = await doCLI(`${CSCOPE_PATH} -d -f ${cscopesDbPath} -L8 ${fileName}`) as string;
-
-   let lines = data.split('\n');
-
-   for (let line of lines) {
-      if (line.length > 0) {
-         includers.push(SymbolInfo.convertToSymbolInfo(line));
+      for (let line of lines) {
+         if (line.length > 0) {
+            includers.push(SymbolInfo.convertToSymbolInfo(line));
+         }
       }
-   }
 
-   return includers;
+      return includers;
+   }).catch((reason) => {
+      console.log(reason);
+      showMessageWindow(String(reason), LogLevel.ERROR);
+   });
+
+   return ret instanceof Array ? ret : new Array<SymbolInfo>();
 }
 
 export async function findCallers(funcName: string) {
