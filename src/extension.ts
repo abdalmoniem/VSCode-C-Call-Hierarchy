@@ -19,7 +19,6 @@ import * as callHierarchyProvider from './cCallHierarchyProvider';
 
 const CSCOPE_DOWNLOAD_URL: string = 'https://github.com/abdalmoniem/VSCode-C-Call-Hierarchy/releases/download/v1.7.4/cscope.zip';
 const CTAGS_DOWNLOAD_URL: string = 'https://github.com/abdalmoniem/VSCode-C-Call-Hierarchy/releases/download/v1.7.4/ctags.zip';
-const PCRE2_EXE_PATH: string = 'C:/Users/hifna/Downloads/pcre2grep-1039/pcre2grep.exe';
 
 let outputChannel: vscode.OutputChannel;
 let statusbarItem: vscode.StatusBarItem;
@@ -29,15 +28,6 @@ enum FormatterStatus {
 	RECHECK = "sync",
 	ERROR = "alert",
 	DISABLED = "circle-slash"
-}
-
-class Function {
-	constructor(
-		public readonly filePath: string,
-		public readonly lineNumber: number,
-		public readonly name: string,
-		public readonly body: string,
-	) { }
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -125,13 +115,13 @@ export function updateStatusbar(show: boolean, status?: FormatterStatus): void {
 
 export async function initializeSubscriptions(): Promise<void> {
 	await vscode.commands.executeCommand('setContext', 'enableCommands', true);
-	const cCallHierarchyProvider = new callHierarchyProvider.CCallHierarchyProvider();
+	const cCallHierarchyProvider = new callHierarchyProvider.CCallHierarchyProvider(extensionContext);
 	const commands = await vscode.commands.getCommands(true);
 
 	extensionContext.subscriptions.push(
 		!commands.includes('cCallHierarchy.startIndexing') ?
 			vscode.commands.registerCommand('cCallHierarchy.startIndexing',
-				async () => await startIndexing()) : new vscode.Disposable(() => undefined),
+				async () => await cCallHierarchyProvider.startIndexing()) : new vscode.Disposable(() => undefined),
 		!commands.includes('cCallHierarchy.build') ?
 			vscode.commands.registerCommand('cCallHierarchy.build',
 				async () => await callHierarchyProvider.buildDatabase(callHierarchyProvider.DatabaseType.BOTH)) :
@@ -155,74 +145,6 @@ export async function initializeSubscriptions(): Promise<void> {
 			cCallHierarchyProvider
 		)
 	);
-}
-
-export async function startIndexing() {
-	console.time('indexing took');
-	outputChannel.show();
-
-	const files = await vscode.workspace.findFiles('**/*.{c,h}');
-	if (vscode.workspace.workspaceFolders !== undefined) {
-		const workspace = vscode.workspace.workspaceFolders[0].uri.fsPath;
-		outputChannel.appendLine(`starting indexing of ${workspace}`);
-		outputChannel.appendLine(`found: ${files.length} files`);
-	}
-
-	vscode.window.withProgress({
-		location: vscode.ProgressLocation.Window,
-		cancellable: false
-	}, async (progress) => {
-		let indexingProgress = 0;
-		const functions: Array<Function> = [];
-		progress.report({ increment: 0 });
-
-		for (const { index, file } of files.map((file, index) => ({ index, file }))) {
-			// const document = await vscode.workspace.openTextDocument(file);
-			// const text = document.getText();
-
-			if (vscode.workspace.workspaceFolders !== undefined) {
-				indexingProgress = 100 * index / files.length;
-				const workspace = vscode.workspace.workspaceFolders[0].uri.fsPath;
-				const docName = file.fsPath.replace(workspace, '').slice(1);
-				const message = `(${indexingProgress.toFixed(1)} %) indexing ${docName}...`;
-
-				outputChannel.appendLine('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++');
-				outputChannel.appendLine(`indexing ${file.fsPath}...`);
-
-				const regexFilePath = extensionContext.asAbsolutePath('src/c_function_regex_pattern.txt');
-				// const regexFilePath = path.join(extensionContext.extensionPath, 'src', 'c_function_regex_pattern.txt');
-
-				const command = `${PCRE2_EXE_PATH} --line-number --om-separator=":" -o1 -o2 -H -N CRLF -iMf "${regexFilePath}" "${file.fsPath}"`;
-
-				await doCLI(command).then((matches) => {
-					const functionsData = matches.trim().split(`${file.fsPath}:`).splice(1);
-
-					if (functionsData.length > 0) {
-						for (const functionData of functionsData.map(functionName => functionName.trim())) {
-							const functionComponenets = functionData.split(':');
-							const functionObj = new Function(file.fsPath, Number(functionComponenets[0]), functionComponenets[1], functionComponenets[2]);
-							functions.push(functionObj);
-							outputChannel.appendLine(`${functionObj.lineNumber}: ${functionObj.name}`);
-						}
-					}
-				}).catch((reason) => {
-					if (reason !== '') {
-						outputChannel.appendLine(`ERROR: ${reason}`);
-					} else {
-						// outputChannel.appendLine(`no functions found`);
-					}
-				});
-				outputChannel.appendLine('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n');
-
-				progress.report({ message: message, increment: 100 / files.length });
-			}
-		}
-
-		progress.report({ increment: 100 });
-		
-		console.log(functions);
-		console.timeEnd('indexing took');
-	});
 }
 
 export async function installCSCOPE_CTAGS(): Promise<void> {
