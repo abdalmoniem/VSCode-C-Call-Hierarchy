@@ -8,7 +8,7 @@ let CTAGS_PATH = 'ctags';
 let READTAGS_PATH = 'readtags';
 
 // TODO: to be downloaded in the future the same way as CSCOPE, CTAGS & READTAGS are downloaded
-const PCRE2_EXE_PATH: string = 'C:/Users/hifna/Downloads/pcre2grep-1039/pcre2grep.exe';
+const PCRE2_EXE_PATH: string = `${process.env.USERPROFILE}/Downloads/pcre2grep-1039/pcre2grep.exe`;
 
 const symbols: Record<string, vscode.SymbolKind> = {
    'd': vscode.SymbolKind.String,
@@ -108,7 +108,7 @@ export class SymbolInfo {
 }
 
 class Function {
-   children: Array<string> = [];
+   children: Array<Function> = [];
 
    // TODO: to be implemented when finding children data is feasable
    // children: Array<Function> = [];
@@ -142,8 +142,10 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
 
    constructor(private readonly extensionContext: vscode.ExtensionContext) {
       this.cwd = getWorkspaceRootPath();
-      const functionsFilePath = this.extensionContext.asAbsolutePath('src/functions.json');
-      this.functions = JSON.parse(fs.readFileSync(functionsFilePath, 'utf-8'));
+
+      // TODO: remove after debgging
+      // const functionsFilePath = this.extensionContext.asAbsolutePath('src/functions.json');
+      // this.functions = JSON.parse(fs.readFileSync(functionsFilePath, 'utf-8'));
    }
 
    async prepareCallHierarchy(
@@ -251,48 +253,46 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
 
                incomingCalls.push(new vscode.CallHierarchyIncomingCall(fromCaller, [symbolRange]));
             } catch (ex) {
-               console.log(ex);
+               console.trace(ex);
             }
          }
       } else {
-         // for (const cFunction of this.functions) {
-         //    for (const child of cFunction.children) {
-         //       if (item.name === child) {
-         //          const symbolRange = new vscode.Range(new vscode.Position(0, 0), new vscode.Position(0, 0));
+         this.functions
+            .filter(cFunction => cFunction.children.find(childFunction => childFunction.name === item.name))
+            .forEach(caller => {
+               const symbolRange = new vscode.Range(new vscode.Position(0, 0), new vscode.Position(0, 0));
 
-         //          const fromCaller = new CCallHierarchyItem(
-         //             vscode.SymbolKind.Function,
-         //             cFunction.name,
-         //             '',
-         //             vscode.Uri.file(''),
-         //             symbolRange,
-         //             symbolRange,
-         //             false
-         //          );
+               const fromCaller = new CCallHierarchyItem(
+                  vscode.SymbolKind.Function,
+                  caller.name,
+                  '',
+                  vscode.Uri.file(''),
+                  symbolRange,
+                  symbolRange,
+                  false
+               );
 
-         //          incomingCalls.push(new vscode.CallHierarchyIncomingCall(fromCaller, [symbolRange]));
-         //       }
-         //    }
-         // }
+               incomingCalls.push(new vscode.CallHierarchyIncomingCall(fromCaller, [symbolRange]));
+            });
 
          // TODO: to be replaced when the new indexing function is finalized
-         const callers = await findCallers(item.name);
+         // const callers = await findCallers(item.name);
 
-         for (const callerItem of callers) {
-            const { description, filePath, symbolRange } = await this.getSymbolInfo(callerItem, item.name);
+         // for (const callerItem of callers) {
+         //    const { description, filePath, symbolRange } = await this.getSymbolInfo(callerItem, item.name);
 
-            const fromCaller = new CCallHierarchyItem(
-               await getSymbolKind(callerItem.name),
-               callerItem.name,
-               description,
-               filePath,
-               symbolRange,
-               symbolRange,
-               false
-            );
+         //    const fromCaller = new CCallHierarchyItem(
+         //       await getSymbolKind(callerItem.name),
+         //       callerItem.name,
+         //       description,
+         //       filePath,
+         //       symbolRange,
+         //       symbolRange,
+         //       false
+         //    );
 
-            incomingCalls.push(new vscode.CallHierarchyIncomingCall(fromCaller, [symbolRange]));
-         }
+         //    incomingCalls.push(new vscode.CallHierarchyIncomingCall(fromCaller, [symbolRange]));
+         // }
       }
       return incomingCalls;
    }
@@ -333,8 +333,8 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
                }
             }
          }).catch((reason) => {
-            console.trace();
-            console.log(reason);
+            console.trace(reason);
+            
             showMessageWindow(String(reason), LogLevel.ERROR);
          });
       } else {
@@ -386,7 +386,7 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
                indexingProgress = 100 * index / files.length;
                const workspace = vscode.workspace.workspaceFolders[0].uri.fsPath;
                const docName = file.fsPath.replace(workspace, '').slice(1);
-               const message = `(${indexingProgress.toFixed(1)} %) indexing ${docName}...`;
+               const message = `(${(index + 1).toLocaleString()} / ${files.length.toLocaleString()}) (${indexingProgress.toFixed(1)} %) indexing ${docName}...`;
 
                this.outputChannel.appendLine('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++');
                this.outputChannel.appendLine(`indexing ${file.fsPath}...`);
@@ -394,35 +394,44 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
                const regexFilePath = this.extensionContext.asAbsolutePath('src/c_function_regex_pattern.txt');
                // const regexFilePath = path.join(this.extensionContext.extensionPath, 'src', 'c_function_regex_pattern.txt');
 
-               const command = `${PCRE2_EXE_PATH} --line-number --om-separator=":" -o1 -o2 -H -N CRLF -iMf "${regexFilePath}" "${file.fsPath}"`;
+               const command = `${PCRE2_EXE_PATH} --line-number --om-separator="<\`!@>\`" -o1 -o2 -H -N LF -iMf "${regexFilePath}" "${file.fsPath}"`;
 
                await doCLI(command).then((matches) => {
                   const functionsData = matches.trim().split(`${file.fsPath}:`).splice(1);
 
-                  if (functionsData.length > 0) {
-                     for (const functionData of functionsData.map(functionName => functionName.trim())) {
-                        const functionComponenets = functionData.split(':');
-                        const cFunction = new Function(file.fsPath, Number(functionComponenets[0]), functionComponenets[1], functionComponenets[2]);
+                  for (const functionData of functionsData.map(functionName => functionName.trim())) {
+                     let [lineNumber, body, ...rest] = functionData.split(':');
 
-                        cFunction.children = this.findFunctionCalls(cFunction.body);
+                     if (body !== undefined) {
+                        const functionName = body.concat(rest.join(':')).split('<`!@>`')[0];
+
+                        const functionBody = body.concat(rest.join(':')).split('<`!@>`')[1];
+
+                        const cFunction = new Function(file.fsPath, Number(lineNumber), functionName, functionBody);
+
+                        cFunction.children = this.findFunctionCalls(cFunction.body).map(name => new Function(file.fsPath, 1, name, ''));
 
                         this.outputChannel.appendLine(`${cFunction.lineNumber}: ${cFunction.name}`);
-                        for (const functionName of cFunction.children) {
-                           this.outputChannel.appendLine(`\t- ${functionName}`);
+                        for (const childFunction of cFunction.children) {
+                           this.outputChannel.appendLine(`\t- ${childFunction.lineNumber}: ${childFunction.name}`);
                         }
 
                         this.functions.push(cFunction);
+                     } else {
+                        console.trace(`ERROR: ${file.fsPath}::${lineNumber}::function has an empty body!`);
                      }
                   }
                }).catch((reason) => {
                   if (reason !== '') {
-                     console.trace();
+                     console.trace(reason);
+                     
                      this.outputChannel.appendLine(`ERROR: ${reason}`);
                   } else {
                      // this.outputChannel.appendLine(`no functions found`);
                   }
                });
-               this.outputChannel.appendLine('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n');
+               this.outputChannel.appendLine('+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++');
+               this.outputChannel.appendLine(`total functions found: ${(this.functions.length).toLocaleString()}\n`);
 
                progress.report({ message: message, increment: 100 / files.length });
             }
@@ -437,7 +446,8 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
 
    private findFunctionCalls(functionBody: string): Array<string> {
       // Regular expression to match C function calls
-      const functionCallRegex = /([a-zA-Z_]\w*)\s*\([^)]*\)\s*;/gm;
+      // const functionCallRegex = /([a-zA-Z_]\w*)\s*\([^)]*\)\s*;/gm;
+      const functionCallRegex = /([a-zA-Z_]\w*)\s*\(\s*.*?\s*\)\s*;/gm;
 
       // Array to store detected function calls
       const functionCalls: string[] = [];
@@ -473,8 +483,8 @@ export class CCallHierarchyProvider implements vscode.CallHierarchyProvider {
                description = `${canShowFileNames ? funcInfo.getFileName() : ''} @ ${funcInfo.linePosition.toString()}`;
             }
          }).catch((reason) => {
-            console.trace();
-            console.log(reason);
+            console.trace(reason);
+            
             showMessageWindow(String(reason), LogLevel.ERROR);
          });
       }
@@ -533,8 +543,8 @@ export async function buildDatabase(buildOption: DatabaseType): Promise<void> {
          // showMessageWindow('Building cscope Database...');
 
          await doCLI(`${CSCOPE_PATH} -Rcbkf "${cscopesDbPath}"`).catch((reason) => {
-            console.trace();
-            console.log(reason);
+            console.trace(reason);
+            
             showMessageWindow(String(reason), LogLevel.ERROR);
          });
 
@@ -547,8 +557,8 @@ export async function buildDatabase(buildOption: DatabaseType): Promise<void> {
          // showMessageWindow('Building ctags Database...');
 
          await doCLI(`${CTAGS_PATH} --fields=+i -Rno "${ctagsDbPath}"`).catch((reason) => {
-            console.trace();
-            console.log(reason);
+            console.trace(reason);
+            
             showMessageWindow(String(reason), LogLevel.ERROR);
          });
 
@@ -577,8 +587,8 @@ export async function findIncluders(fileName: string): Promise<Array<SymbolInfo>
 
       return includers;
    }).catch((reason) => {
-      console.trace();
-      console.log(reason);
+      console.trace(reason);
+      
       showMessageWindow(String(reason), LogLevel.ERROR);
    });
 
@@ -598,12 +608,10 @@ export async function findCallers(funcName: string): Promise<Array<SymbolInfo>> 
          .map(group => (group as Array<SymbolInfo>).slice(-1)[0])
          .value();
    }).catch((reason) => {
-      console.trace();
-      console.log(reason);
+      console.trace(reason);
+      
       showMessageWindow(String(reason), LogLevel.ERROR);
    });
-
-   console.log(callers instanceof Array);
 
    return callers instanceof Array ? callers : new Array<SymbolInfo>();
 }
@@ -628,8 +636,8 @@ export async function findCallees(funcName: string): Promise<Array<SymbolInfo>> 
          .map(group => (group as Array<SymbolInfo>).slice(-1)[0])
          .value();
    }).catch((reason) => {
-      console.trace();
-      console.log(reason);
+      console.trace(reason);
+      
       showMessageWindow(String(reason), LogLevel.ERROR);
    });
 
@@ -641,13 +649,13 @@ export async function getSymbolKind(symbolName: string): Promise<vscode.SymbolKi
 
    const data = process.platform === 'win32' ?
       await doCLI(`${READTAGS_PATH} -t "${ctagsDbPath}" -F "(list $name \\" \\" $input \\" \\" $line \\" \\" $kind #t)" ${symbolName}`).catch((reason) => {
-         console.trace();
-         console.log(reason);
+         console.trace(reason);
+         
          showMessageWindow(String(reason), LogLevel.ERROR);
       }) :
       await doCLI(`${READTAGS_PATH} -t "${ctagsDbPath}" -F '(list $name " " $input " " $line " " $kind #t)' ${symbolName}`).catch((reason) => {
-         console.trace();
-         console.log(reason);
+         console.trace(reason);
+         
          showMessageWindow(String(reason), LogLevel.ERROR);
       });
 
